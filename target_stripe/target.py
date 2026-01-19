@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import Any
+from collections.abc import Sequence
+from pathlib import PurePath
 
 from singer_sdk import Target
 from singer_sdk import typing as th
@@ -165,7 +165,7 @@ class TargetStripe(Target):
 
     def __init__(
         self,
-        config: dict[str, Any] | Path | str | list[Path | str] | None = None,
+        config: dict | PurePath | str | list[PurePath | str] | None = None,
         parse_env_config: bool = False,
         validate_config: bool = True,
     ) -> None:
@@ -233,7 +233,7 @@ class TargetStripe(Target):
         *,
         record: dict | None = None,
         schema: dict | None = None,
-        key_properties: list[str] | None = None,
+        key_properties: Sequence[str] | None = None,
     ) -> CustomerSink | SubscriptionSink:
         """Get or create a sink for a stream.
 
@@ -252,7 +252,7 @@ class TargetStripe(Target):
             schema=schema,
             key_properties=key_properties,
         )
-        sink.max_size = self._parsed_config.batch_size
+        sink.max_size = self._parsed_config.batch_size  # type: ignore[misc]
         return sink  # type: ignore
 
     def _process_record_message(self, message_dict: dict) -> None:
@@ -277,12 +277,12 @@ class TargetStripe(Target):
             self._write_state_message(self._latest_state)
             logger.debug("Emitted state after %d records", self._records_processed)
 
-    def _process_endofpipe(self) -> None:
+    def process_endofpipe(self) -> None:
         """Process end of input.
 
         Clean up resources and log final statistics.
         """
-        super()._process_endofpipe()
+        super().process_endofpipe()
 
         stats = self._stripe_client.stats
         logger.info(

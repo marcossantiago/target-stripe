@@ -57,17 +57,17 @@ class StripeBaseSink(BatchSink):
     @property
     def hard_fail(self) -> bool:
         """Get cached hard_fail setting."""
-        return self._hard_fail
+        return self._hard_fail  # type: ignore[no-any-return]
 
     @property
     def dry_run(self) -> bool:
         """Get cached dry_run setting."""
-        return self._dry_run
+        return self._dry_run  # type: ignore[no-any-return]
 
     @property
     def source_fields(self) -> SourceFieldsConfig:
         """Get cached source_fields config."""
-        return self._source_fields
+        return self._source_fields  # type: ignore[no-any-return]
 
     def _handle_error(
         self,

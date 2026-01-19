@@ -51,7 +51,7 @@ class MappingStore:
             self._local.connection.row_factory = sqlite3.Row
             self._local.connection.execute("PRAGMA journal_mode=WAL")
             self._local.connection.execute("PRAGMA synchronous=NORMAL")
-        return self._local.connection
+        return self._local.connection  # type: ignore[no-any-return]
 
     @contextmanager
     def _transaction(self) -> Iterator[sqlite3.Connection]:

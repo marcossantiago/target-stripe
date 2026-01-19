@@ -209,7 +209,7 @@ class StripeClientWrapper:
                 limit=1,
             )
             if customers.data:
-                return customers.data[0]
+                return customers.data[0]  # type: ignore[no-any-return]
             return None
         except stripe.InvalidRequestError:
             return None
@@ -555,7 +555,7 @@ class StripeClientWrapper:
             return None
 
         try:
-            return self._execute_with_retry(stripe.Customer.retrieve, stripe_id)
+            return self._execute_with_retry(stripe.Customer.retrieve, stripe_id)  # type: ignore[no-any-return]
         except stripe.InvalidRequestError:
             return None
 
@@ -572,6 +572,6 @@ class StripeClientWrapper:
             return None
 
         try:
-            return self._execute_with_retry(stripe.Subscription.retrieve, stripe_id)
+            return self._execute_with_retry(stripe.Subscription.retrieve, stripe_id)  # type: ignore[no-any-return]
         except stripe.InvalidRequestError:
             return None
