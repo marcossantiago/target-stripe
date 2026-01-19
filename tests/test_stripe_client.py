@@ -126,9 +126,7 @@ class TestStripeClientWrapper:
         mock_stripe_customer: MagicMock,
     ) -> None:
         """Test updating an existing customer."""
-        mapping_store.set_mapping(
-            EntityType.CUSTOMER, "12345", "cus_existing"
-        )
+        mapping_store.set_mapping(EntityType.CUSTOMER, "12345", "cus_existing")
         mock_stripe.Customer.modify.return_value = mock_stripe_customer
         mock_stripe_customer.id = "cus_existing"
 

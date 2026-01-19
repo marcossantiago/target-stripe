@@ -434,9 +434,7 @@ class SubscriptionSink(StripeBaseSink):
             subscription_data["coupon"] = record["coupon_code"]
 
         if "cancel_at_period_end" in record:
-            subscription_data["cancel_at_period_end"] = bool(
-                record["cancel_at_period_end"]
-            )
+            subscription_data["cancel_at_period_end"] = bool(record["cancel_at_period_end"])
 
         metadata = record.get("metadata", {})
         if isinstance(metadata, dict):

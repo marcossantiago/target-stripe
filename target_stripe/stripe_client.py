@@ -149,9 +149,7 @@ class StripeClientWrapper:
             str(retry_state.outcome.exception()) if retry_state.outcome else "unknown",
         )
 
-    def _execute_with_retry(
-        self, operation: Any, *args: Any, **kwargs: Any
-    ) -> Any:
+    def _execute_with_retry(self, operation: Any, *args: Any, **kwargs: Any) -> Any:
         """Execute a Stripe operation with retry logic."""
         decorator = self._make_retry_decorator()
 
@@ -185,9 +183,7 @@ class StripeClientWrapper:
             return _inner()
         except RetryError as e:
             self._stats["errors"] += 1
-            raise StripeError(
-                f"Max retries exceeded: {e.last_attempt.exception()}"
-            ) from e
+            raise StripeError(f"Max retries exceeded: {e.last_attempt.exception()}") from e
 
     def find_customer_by_metadata(
         self,
@@ -235,9 +231,7 @@ class StripeClientWrapper:
         Raises:
             StripeError: If the operation fails.
         """
-        existing_stripe_id = self.mapping_store.get_stripe_id(
-            EntityType.CUSTOMER, source_id
-        )
+        existing_stripe_id = self.mapping_store.get_stripe_id(EntityType.CUSTOMER, source_id)
 
         metadata = data.get("metadata", {})
         metadata[self.config.source_fields.customer_metadata_key] = source_id
@@ -306,9 +300,7 @@ class StripeClientWrapper:
                 self.config.source_fields.customer_metadata_key, source_id
             )
             if existing_customer:
-                self.mapping_store.set_mapping(
-                    EntityType.CUSTOMER, source_id, existing_customer.id
-                )
+                self.mapping_store.set_mapping(EntityType.CUSTOMER, source_id, existing_customer.id)
                 customer = self._execute_with_retry(
                     stripe.Customer.modify,
                     existing_customer.id,
@@ -331,9 +323,7 @@ class StripeClientWrapper:
                 idempotency_key=idempotency_key,
                 **customer_data,
             )
-            self.mapping_store.set_mapping(
-                EntityType.CUSTOMER, source_id, customer.id
-            )
+            self.mapping_store.set_mapping(EntityType.CUSTOMER, source_id, customer.id)
             self._stats["customers_created"] += 1
             logger.debug(
                 "Created customer: source_id=%s, stripe_id=%s",
@@ -460,9 +450,7 @@ class StripeClientWrapper:
         if data.get("cancel_at_period_end") is not None:
             subscription_data["cancel_at_period_end"] = data["cancel_at_period_end"]
 
-        existing_stripe_id = self.mapping_store.get_stripe_id(
-            EntityType.SUBSCRIPTION, source_id
-        )
+        existing_stripe_id = self.mapping_store.get_stripe_id(EntityType.SUBSCRIPTION, source_id)
 
         if self.dry_run:
             logger.info(
@@ -487,9 +475,7 @@ class StripeClientWrapper:
                 "metadata": subscription_data["metadata"],
             }
             if "cancel_at_period_end" in subscription_data:
-                update_data["cancel_at_period_end"] = subscription_data[
-                    "cancel_at_period_end"
-                ]
+                update_data["cancel_at_period_end"] = subscription_data["cancel_at_period_end"]
             if "coupon" in subscription_data:
                 update_data["coupon"] = subscription_data["coupon"]
 
@@ -540,9 +526,7 @@ class StripeClientWrapper:
                 idempotency_key=idempotency_key,
                 **subscription_data,
             )
-            self.mapping_store.set_mapping(
-                EntityType.SUBSCRIPTION, source_id, subscription.id
-            )
+            self.mapping_store.set_mapping(EntityType.SUBSCRIPTION, source_id, subscription.id)
             self._stats["subscriptions_created"] += 1
             logger.debug(
                 "Created subscription: source_id=%s, stripe_id=%s",

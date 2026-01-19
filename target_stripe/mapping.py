@@ -215,9 +215,7 @@ class MappingStore:
             ttl_hours: Time to live in hours.
         """
         now = datetime.now(UTC)
-        expires = datetime.fromtimestamp(
-            now.timestamp() + (ttl_hours * 3600), tz=UTC
-        )
+        expires = datetime.fromtimestamp(now.timestamp() + (ttl_hours * 3600), tz=UTC)
 
         with self._transaction() as conn:
             conn.execute(
@@ -265,9 +263,7 @@ class MappingStore:
         """
         conn = self._get_connection()
         now = datetime.now(UTC).isoformat()
-        cursor = conn.execute(
-            "DELETE FROM idempotency_keys WHERE expires_at < ?", (now,)
-        )
+        cursor = conn.execute("DELETE FROM idempotency_keys WHERE expires_at < ?", (now,))
         return cursor.rowcount
 
     def close(self) -> None:

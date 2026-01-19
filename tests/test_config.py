@@ -85,9 +85,7 @@ class TestTargetStripeConfig:
             "basic": "price_from_file_basic",
             "enterprise": "price_from_file_enterprise",
         }
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(mapping, f)
             f.flush()
             base_config["plan_code_mapping_file"] = f.name
@@ -128,8 +126,7 @@ class TestTargetStripeConfig:
             "customer_metadata_key": "chargify_customer_id",
             "subscription_source_id_field": "chargify_subscription_id",
             "subscription_metadata_key": "chargify_subscription_id",
-                "additional_metadata_fields": ["salesforce_id", "hubspot_id"],
-
+            "additional_metadata_fields": ["salesforce_id", "hubspot_id"],
         }
         config = TargetStripeConfig(**base_config)
         assert config.source_fields.customer_source_id_field == "chargify_customer_id"

@@ -273,9 +273,7 @@ class TestSubscriptionSinkTransform:
         sample_subscription_record: dict[str, Any],
     ) -> None:
         """Test extracting source ID from configured source_subscription_id field."""
-        source_id = subscription_sink_instance._extract_source_id(
-            sample_subscription_record
-        )
+        source_id = subscription_sink_instance._extract_source_id(sample_subscription_record)
         assert source_id == "67890"
 
     def test_extract_source_id_subscription_id(
@@ -302,9 +300,7 @@ class TestSubscriptionSinkTransform:
         sample_subscription_record: dict[str, Any],
     ) -> None:
         """Test basic subscription record transformation."""
-        result = subscription_sink_instance._transform_record(
-            sample_subscription_record
-        )
+        result = subscription_sink_instance._transform_record(sample_subscription_record)
 
         assert result["customer_id"] == "12345"
         assert result["price_id"] == "price_test123"

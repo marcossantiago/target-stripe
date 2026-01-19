@@ -223,8 +223,7 @@ class TargetStripe(Target):
                 stream_name,
             )
             raise ValueError(
-                f"Unsupported stream: {stream_name}. "
-                "Supported streams: customers, subscriptions"
+                f"Unsupported stream: {stream_name}. Supported streams: customers, subscriptions"
             )
         return sink_class
 
@@ -276,9 +275,7 @@ class TargetStripe(Target):
         """Emit a STATE message with current bookmarks."""
         if self._latest_state:
             self._write_state_message(self._latest_state)
-            logger.debug(
-                "Emitted state after %d records", self._records_processed
-            )
+            logger.debug("Emitted state after %d records", self._records_processed)
 
     def _process_endofpipe(self) -> None:
         """Process end of input.

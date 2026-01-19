@@ -56,9 +56,7 @@ class TestMappingStore:
         )
 
         customer_result = mapping_store.get_stripe_id(EntityType.CUSTOMER, "id_123")
-        subscription_result = mapping_store.get_stripe_id(
-            EntityType.SUBSCRIPTION, "id_123"
-        )
+        subscription_result = mapping_store.get_stripe_id(EntityType.SUBSCRIPTION, "id_123")
 
         assert customer_result == "cus_123"
         assert subscription_result == "sub_456"
