@@ -1,0 +1,90 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "target-stripe"
+version = "0.1.0"
+description = "Singer target for Stripe - upserts Customers and Subscriptions via Stripe API"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    { name = "Marcos Santiago" }
+]
+keywords = [
+    "singer",
+    "meltano",
+    "target",
+    "stripe",
+    "etl",
+    "elt",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+]
+dependencies = [
+    "singer-sdk>=0.36.0,<1.0.0",
+    "stripe>=7.0.0,<10.0.0",
+    "tenacity>=8.2.0,<9.0.0",
+    "pydantic>=2.0.0,<3.0.0",
+    "aiolimiter>=1.1.0,<2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
+    "mypy>=1.5.0",
+    "ruff>=0.1.0",
+    "responses>=0.23.0",
+]
+
+[project.scripts]
+target-stripe = "target_stripe.target:TargetStripe.cli"
+
+[project.urls]
+Homepage = "https://github.com/marcossantiago/target-stripe"
+Repository = "https://github.com/marcossantiago/target-stripe"
+Documentation = "https://github.com/marcossantiago/target-stripe#readme"
+
+[tool.hatch.build.targets.wheel]
+packages = ["target_stripe"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "B", "C4", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --cov=target_stripe --cov-report=term-missing"
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["target_stripe"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

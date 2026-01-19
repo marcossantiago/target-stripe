@@ -1,0 +1,28 @@
+{
+  "stripe_api_key": "sk_test_YOUR_API_KEY_HERE",
+  "stripe_mode": "test",
+  "default_currency": "usd",
+  "dry_run": true,
+  "hard_fail": false,
+  "idempotency": {
+    "strategy": "source_id"
+  },
+  "source_fields": {
+    "customer_source_id_field": "source_customer_id",
+    "customer_metadata_key": "source_customer_id",
+    "subscription_source_id_field": "source_subscription_id",
+    "subscription_metadata_key": "source_subscription_id",
+    "additional_metadata_fields": []
+  },
+  "plan_code_to_price_id": {
+    "basic_monthly": "price_XXXXXXXXXXXXXXXX",
+    "pro_monthly": "price_YYYYYYYYYYYYYYYY",
+    "enterprise_annual": "price_ZZZZZZZZZZZZZZZZ"
+  },
+  "state_emit_interval": 100,
+  "rate_limit_per_sec": 25,
+  "mapping_db_path": ".target-stripe-mapping.db",
+  "batch_size": 50,
+  "max_retries": 3,
+  "retry_backoff_base": 2.0
+}

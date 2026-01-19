@@ -1,0 +1,191 @@
+# Meltano Plugin Definition for target-stripe
+#
+# Copy the loader configuration below into your project's meltano.yml
+# under the `plugins.loaders` section.
+#
+# Example usage:
+#   meltano install loader target-stripe
+#   meltano config target-stripe set stripe_api_key sk_test_your_key
+#   meltano run tap-chargify target-stripe
+
+version: 1
+
+plugins:
+  loaders:
+    - name: target-stripe
+      namespace: target_stripe
+      pip_url: target-stripe
+      executable: target-stripe
+      capabilities:
+        - about
+        - stream-maps
+        - schema-flattening
+      settings:
+        # Required Settings
+        - name: stripe_api_key
+          kind: password
+          label: Stripe API Key
+          description: >
+            Stripe API key. Must start with sk_test_ (test mode) or sk_live_ (live mode).
+            Restricted keys (rk_*) are also supported.
+
+        # Mode Settings
+        - name: stripe_mode
+          kind: options
+          label: Stripe Mode
+          options:
+            - value: test
+              label: Test Mode
+            - value: live
+              label: Live Mode
+          value: test
+          description: >
+            Stripe environment mode. Must match the API key type.
+
+        # Behavior Settings
+        - name: dry_run
+          kind: boolean
+          label: Dry Run
+          value: false
+          description: >
+            If true, validate data and log operations without making actual
+            Stripe API calls. Useful for testing and validation.
+
+        - name: hard_fail
+          kind: boolean
+          label: Hard Fail
+          value: false
+          description: >
+            If true, fail immediately on any record processing error.
+            If false, log errors and continue processing remaining records.
+
+        # Idempotency Settings
+        - name: idempotency
+          kind: object
+          label: Idempotency Configuration
+          value:
+            strategy: source_id
+          description: >
+            Idempotency configuration. Strategy can be 'source_id' (default)
+            or 'hash' (includes record data in idempotency key).
+
+        # Source Fields Configuration
+        - name: source_fields
+          kind: object
+          label: Source Fields Configuration
+          value:
+            customer_source_id_field: source_customer_id
+            customer_metadata_key: source_customer_id
+            subscription_source_id_field: source_subscription_id
+            subscription_metadata_key: source_subscription_id
+            additional_metadata_fields: []
+          description: >
+            Configuration for source system field names. Allows adaptation to
+            any source system by specifying which fields contain source IDs
+            and what metadata keys to use in Stripe.
+
+        # Plan Code Mapping
+        - name: plan_code_to_price_id
+          kind: object
+          label: Plan Code to Price ID Mapping
+          value: {}
+          description: >
+            Mapping of plan codes (from source system) to Stripe price IDs.
+            Example: {"basic": "price_123", "pro": "price_456"}
+
+        - name: plan_code_mapping_file
+          kind: string
+          label: Plan Code Mapping File
+          description: >
+            Path to a JSON or YAML file containing plan code to price ID mappings.
+            Useful for managing large mappings outside of meltano.yml.
+
+        # Currency Settings
+        - name: default_currency
+          kind: string
+          label: Default Currency
+          value: usd
+          description: >
+            Default currency code (ISO 4217) for subscriptions.
+
+        # Performance Settings
+        - name: rate_limit_per_sec
+          kind: integer
+          label: Rate Limit (requests/sec)
+          value: 25
+          description: >
+            Maximum Stripe API requests per second. Stripe allows up to 100/sec
+            in live mode, but conservative values (25-50) are recommended.
+
+        - name: batch_size
+          kind: integer
+          label: Batch Size
+          value: 50
+          description: >
+            Number of records to process in each batch before committing.
+
+        - name: state_emit_interval
+          kind: integer
+          label: State Emit Interval
+          value: 100
+          description: >
+            Number of records to process between emitting STATE messages.
+            Lower values provide more granular checkpointing.
+
+        # Retry Settings
+        - name: max_retries
+          kind: integer
+          label: Max Retries
+          value: 3
+          description: >
+            Maximum number of retry attempts for transient Stripe API errors
+            (rate limits, connection errors, 5xx responses).
+
+        - name: retry_backoff_base
+          kind: integer
+          label: Retry Backoff Base (seconds)
+          value: 2
+          description: >
+            Base value for exponential backoff between retries.
+
+        # Storage Settings
+        - name: mapping_db_path
+          kind: string
+          label: Mapping Database Path
+          value: .target-stripe-mapping.db
+          description: >
+            Path to SQLite database file for storing source_id to stripe_id mappings.
+            This enables idempotent re-runs and customer-subscription linking.
+
+# Example environment configuration:
+#
+# environments:
+#   - name: dev
+#     config:
+#       plugins:
+#         loaders:
+#           - name: target-stripe
+#             config:
+#               stripe_api_key: ${STRIPE_TEST_API_KEY}
+#               stripe_mode: test
+#               dry_run: true
+#
+#   - name: prod
+#     config:
+#       plugins:
+#         loaders:
+#           - name: target-stripe
+#             config:
+#               stripe_api_key: ${STRIPE_LIVE_API_KEY}
+#               stripe_mode: live
+#               dry_run: false
+#               hard_fail: true
+
+# Example pipeline schedule:
+#
+# schedules:
+#   - name: chargify-to-stripe-daily
+#     extractor: tap-chargify
+#     loader: target-stripe
+#     interval: '@daily'
+#     start_date: 2024-01-01
