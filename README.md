@@ -4,8 +4,6 @@ A Singer target for Stripe that upserts Customers and Subscriptions via the Stri
 
 Built with the [Meltano Singer SDK](https://sdk.meltano.com).
 
-Author: Marcos Santiago.
-
 ## Features
 
 - **Upsert Stripe Customers** - Create or update customers with deduplication via metadata search
