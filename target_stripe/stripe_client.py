@@ -164,28 +164,30 @@ class StripeClientWrapper:
                 raise StripeTransientError(
                     f"Rate limit exceeded: {e}",
                     stripe_error=e,
-                )
+                ) from e
             except stripe.APIConnectionError as e:
                 raise StripeTransientError(
                     f"API connection error: {e}",
                     stripe_error=e,
-                )
+                ) from e
             except stripe.APIError as e:
                 if e.http_status in (500, 502, 503, 504):
                     raise StripeTransientError(
                         f"Stripe server error: {e}",
                         stripe_error=e,
-                    )
+                    ) from e
                 raise StripePermanentError(
                     f"Stripe API error: {e}",
                     stripe_error=e,
-                )
+                ) from e
 
         try:
             return _inner()
         except RetryError as e:
             self._stats["errors"] += 1
-            raise StripeError(f"Max retries exceeded: {e.last_attempt.exception()}")
+            raise StripeError(
+                f"Max retries exceeded: {e.last_attempt.exception()}"
+            ) from e
 
     def find_customer_by_metadata(
         self,
@@ -297,7 +299,7 @@ class StripeClientWrapper:
                         f"Failed to update customer {source_id}: {e}",
                         source_id=source_id,
                         stripe_error=e,
-                    )
+                    ) from e
 
         if not existing_stripe_id:
             existing_customer = self.find_customer_by_metadata(
@@ -345,7 +347,7 @@ class StripeClientWrapper:
                 f"Failed to create customer {source_id}: {e}",
                 source_id=source_id,
                 stripe_error=e,
-            )
+            ) from e
 
     def resolve_customer_id(self, customer_ref: str) -> str | None:
         """Resolve a customer reference to a Stripe customer ID.
@@ -514,7 +516,7 @@ class StripeClientWrapper:
                         f"Failed to update subscription {source_id}: {e}",
                         source_id=source_id,
                         stripe_error=e,
-                    )
+                    ) from e
 
         idempotency_key = generate_idempotency_key(
             EntityType.SUBSCRIPTION,
@@ -554,7 +556,7 @@ class StripeClientWrapper:
                 f"Failed to create subscription {source_id}: {e}",
                 source_id=source_id,
                 stripe_error=e,
-            )
+            ) from e
 
     def get_customer(self, stripe_id: str) -> stripe.Customer | None:
         """Retrieve a customer by Stripe ID.

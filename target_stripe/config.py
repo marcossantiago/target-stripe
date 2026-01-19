@@ -178,11 +178,11 @@ class TargetStripeConfig(BaseModel):
                         import yaml
 
                         file_mapping = yaml.safe_load(content)
-                    except ImportError:
+                    except ImportError as e:
                         raise ValueError(
                             "PyYAML is required to load YAML mapping files. "
                             "Install with: pip install pyyaml"
-                        )
+                        ) from e
                 else:
                     file_mapping = json.loads(content)
 

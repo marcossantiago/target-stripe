@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,7 +11,6 @@ from target_stripe.mapping import EntityType, MappingStore
 from target_stripe.stripe_client import (
     RateLimiter,
     StripeClientWrapper,
-    StripePermanentError,
     is_transient_error,
 )
 
@@ -38,7 +36,6 @@ class TestIsTransientError:
         """Test that rate limit errors are transient."""
         with patch("target_stripe.stripe_client.stripe") as mock_stripe:
             mock_stripe.RateLimitError = type("RateLimitError", (Exception,), {})
-            error = mock_stripe.RateLimitError("Rate limited")
 
             with patch(
                 "target_stripe.stripe_client.stripe.RateLimitError",
