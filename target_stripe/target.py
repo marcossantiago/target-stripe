@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from pathlib import PurePath
+from typing import Any, Dict
 
 from singer_sdk import Target
 from singer_sdk import typing as th
@@ -227,6 +228,66 @@ class TargetStripe(Target):
             )
         return sink_class
 
+    @staticmethod
+    def _normalize_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize JSON Schema to be compatible with newer draft versions.
+
+        Converts old-style exclusiveMaximum/exclusiveMinimum (boolean) to new style.
+
+        Args:
+            schema: JSON Schema dictionary.
+
+        Returns:
+            Normalized schema.
+        """
+        if not isinstance(schema, dict):
+            return schema
+
+        # Create a copy to avoid modifying the original
+        normalized = schema.copy()
+
+        # Recursively normalize properties
+        if "properties" in normalized and isinstance(normalized["properties"], dict):
+            normalized["properties"] = {
+                key: TargetStripe._normalize_schema(value)
+                for key, value in normalized["properties"].items()
+            }
+
+        # Handle old-style exclusiveMaximum (boolean + maximum)
+        if "exclusiveMaximum" in normalized:
+            if normalized["exclusiveMaximum"] is True and "maximum" in normalized:
+                # Old style: exclusiveMaximum: true, maximum: N
+                # New style: exclusiveMaximum: N (no maximum field)
+                normalized["exclusiveMaximum"] = normalized["maximum"]
+                del normalized["maximum"]
+            elif normalized["exclusiveMaximum"] is False:
+                # Old style: exclusiveMaximum: false, maximum: N
+                # New style: just use maximum: N
+                del normalized["exclusiveMaximum"]
+
+        # Handle old-style exclusiveMinimum (boolean + minimum)
+        if "exclusiveMinimum" in normalized:
+            if normalized["exclusiveMinimum"] is True and "minimum" in normalized:
+                # Old style: exclusiveMinimum: true, minimum: N
+                # New style: exclusiveMinimum: N (no minimum field)
+                normalized["exclusiveMinimum"] = normalized["minimum"]
+                del normalized["minimum"]
+            elif normalized["exclusiveMinimum"] is False:
+                # Old style: exclusiveMinimum: false, minimum: N
+                # New style: just use minimum: N
+                del normalized["exclusiveMinimum"]
+
+        # Recursively normalize items (for arrays)
+        if "items" in normalized and isinstance(normalized["items"], dict):
+            normalized["items"] = TargetStripe._normalize_schema(normalized["items"])
+
+        # Recursively normalize anyOf, allOf, oneOf
+        for key in ["anyOf", "allOf", "oneOf"]:
+            if key in normalized and isinstance(normalized[key], list):
+                normalized[key] = [TargetStripe._normalize_schema(item) for item in normalized[key]]
+
+        return normalized
+
     def get_sink(
         self,
         stream_name: str,
@@ -246,6 +307,10 @@ class TargetStripe(Target):
         Returns:
             Sink instance.
         """
+        # Normalize schema to handle old JSON Schema draft formats
+        if schema is not None:
+            schema = self._normalize_schema(schema)
+
         sink = super().get_sink(
             stream_name,
             record=record,
