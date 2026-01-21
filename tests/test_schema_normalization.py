@@ -1,6 +1,5 @@
 """Tests for schema normalization."""
 
-from typing import Any, Dict
 
 from target_stripe.target import TargetStripe
 
