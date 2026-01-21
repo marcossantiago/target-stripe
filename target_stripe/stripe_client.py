@@ -235,7 +235,7 @@ class StripeClientWrapper:
         existing_stripe_id = self.mapping_store.get_stripe_id(EntityType.CUSTOMER, source_id)
 
         metadata = data.get("metadata", {})
-        metadata[self.config.source_fields.customer_metadata_key] = source_id
+        metadata[self.config.source_fields.get_customer_metadata_key()] = source_id
         # Copy additional metadata fields from source data
         for field in self.config.source_fields.additional_metadata_fields:
             if field in data:
@@ -300,7 +300,7 @@ class StripeClientWrapper:
             # Skip metadata search if configured (useful for initial migrations)
             if not self.config.skip_existence_check:
                 existing_customer = self.find_customer_by_metadata(
-                    self.config.source_fields.customer_metadata_key, source_id
+                    self.config.source_fields.get_customer_metadata_key(), source_id
                 )
                 if existing_customer:
                     self.mapping_store.set_mapping(
@@ -420,7 +420,7 @@ class StripeClientWrapper:
         )
 
         metadata = data.get("metadata", {})
-        metadata[self.config.source_fields.subscription_metadata_key] = source_id
+        metadata[self.config.source_fields.get_subscription_metadata_key()] = source_id
 
         subscription_data: dict[str, Any] = {
             "metadata": metadata,

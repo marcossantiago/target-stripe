@@ -209,7 +209,7 @@ class CustomerSink(StripeBaseSink):
                 return str(record[field])
 
         # Check metadata using configured key
-        metadata_key = self.source_fields.customer_metadata_key
+        metadata_key = self.source_fields.get_customer_metadata_key()
         if "metadata" in record and isinstance(record["metadata"], dict):
             if metadata_key in record["metadata"]:
                 return str(record["metadata"][metadata_key])
@@ -384,7 +384,7 @@ class SubscriptionSink(StripeBaseSink):
                 return str(record[field])
 
         # Check metadata using configured key
-        metadata_key = self.source_fields.subscription_metadata_key
+        metadata_key = self.source_fields.get_subscription_metadata_key()
         if "metadata" in record and isinstance(record["metadata"], dict):
             if metadata_key in record["metadata"]:
                 return str(record["metadata"][metadata_key])

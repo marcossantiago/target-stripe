@@ -114,9 +114,15 @@ class TestTargetStripeConfig:
         """Test source_fields has sensible defaults."""
         config = TargetStripeConfig(**base_config)
         assert config.source_fields.customer_source_id_field == "source_customer_id"
-        assert config.source_fields.customer_metadata_key == "source_customer_id"
+        assert config.source_fields.customer_metadata_key is None
+        assert (
+            config.source_fields.get_customer_metadata_key() == "source_customer_id"
+        )  # Falls back
         assert config.source_fields.subscription_source_id_field == "source_subscription_id"
-        assert config.source_fields.subscription_metadata_key == "source_subscription_id"
+        assert config.source_fields.subscription_metadata_key is None
+        assert (
+            config.source_fields.get_subscription_metadata_key() == "source_subscription_id"
+        )  # Falls back
         assert config.source_fields.additional_metadata_fields == []
 
     def test_source_fields_custom(self, base_config: dict) -> None:
@@ -143,7 +149,9 @@ class TestTargetStripeConfig:
         config = TargetStripeConfig(**base_config)
         assert config.source_fields.customer_source_id_field == "my_customer_id"
         # Other fields should have defaults
-        assert config.source_fields.customer_metadata_key == "source_customer_id"
+        assert config.source_fields.customer_metadata_key is None
+        # Should fall back to customer_source_id_field
+        assert config.source_fields.get_customer_metadata_key() == "my_customer_id"
 
 
 class TestSourceFieldsConfig:
@@ -153,13 +161,15 @@ class TestSourceFieldsConfig:
         """Test default values."""
         config = SourceFieldsConfig()
         assert config.customer_source_id_field == "source_customer_id"
-        assert config.customer_metadata_key == "source_customer_id"
+        assert config.customer_metadata_key is None
+        assert config.get_customer_metadata_key() == "source_customer_id"
         assert config.subscription_source_id_field == "source_subscription_id"
-        assert config.subscription_metadata_key == "source_subscription_id"
+        assert config.subscription_metadata_key is None
+        assert config.get_subscription_metadata_key() == "source_subscription_id"
         assert config.additional_metadata_fields == []
 
     def test_custom_values(self) -> None:
-        """Test custom values."""
+        """Test custom values with explicit metadata keys."""
         config = SourceFieldsConfig(
             customer_source_id_field="external_customer_id",
             customer_metadata_key="ext_cust_id",
@@ -169,9 +179,24 @@ class TestSourceFieldsConfig:
         )
         assert config.customer_source_id_field == "external_customer_id"
         assert config.customer_metadata_key == "ext_cust_id"
+        assert config.get_customer_metadata_key() == "ext_cust_id"
         assert config.subscription_source_id_field == "external_subscription_id"
         assert config.subscription_metadata_key == "ext_sub_id"
+        assert config.get_subscription_metadata_key() == "ext_sub_id"
         assert config.additional_metadata_fields == ["custom_field_1", "custom_field_2"]
+
+    def test_metadata_key_fallback(self) -> None:
+        """Test that metadata keys fall back to source_id_field when not explicitly set."""
+        config = SourceFieldsConfig(
+            customer_source_id_field="chargify_customer_id",
+            subscription_source_id_field="chargify_subscription_id",
+        )
+        # Metadata keys should be None when not set
+        assert config.customer_metadata_key is None
+        assert config.subscription_metadata_key is None
+        # But helper methods should return the source_id_field values
+        assert config.get_customer_metadata_key() == "chargify_customer_id"
+        assert config.get_subscription_metadata_key() == "chargify_subscription_id"
 
 
 class TestParseConfig:

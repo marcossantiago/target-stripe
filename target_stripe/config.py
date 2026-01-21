@@ -52,17 +52,17 @@ class SourceFieldsConfig(BaseModel):
         default="source_customer_id",
         description="Field name in source records containing the customer ID",
     )
-    customer_metadata_key: str = Field(
-        default="source_customer_id",
-        description="Metadata key used in Stripe to store the source customer ID",
+    customer_metadata_key: Optional[str] = Field(
+        default=None,
+        description="Metadata key used in Stripe to store the source customer ID. If not set, uses customer_source_id_field.",
     )
     subscription_source_id_field: str = Field(
         default="source_subscription_id",
         description="Field name in source records containing the subscription ID",
     )
-    subscription_metadata_key: str = Field(
-        default="source_subscription_id",
-        description="Metadata key used in Stripe to store the source subscription ID",
+    subscription_metadata_key: Optional[str] = Field(
+        default=None,
+        description="Metadata key used in Stripe to store the source subscription ID. If not set, uses subscription_source_id_field.",
     )
     additional_metadata_fields: List[str] = Field(
         default_factory=list,
@@ -88,6 +88,14 @@ class SourceFieldsConfig(BaseModel):
         default="none",
         description="Stripe proration behavior when using billing cycle fields: none, create_prorations, or always_invoice",
     )
+
+    def get_customer_metadata_key(self) -> str:
+        """Get the metadata key for customers, with fallback to source_id_field."""
+        return self.customer_metadata_key or self.customer_source_id_field
+
+    def get_subscription_metadata_key(self) -> str:
+        """Get the metadata key for subscriptions, with fallback to source_id_field."""
+        return self.subscription_metadata_key or self.subscription_source_id_field
 
 
 class TargetStripeConfig(BaseModel):

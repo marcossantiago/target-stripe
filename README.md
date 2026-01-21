@@ -48,9 +48,9 @@ pip install -e .
 | `hard_fail` | boolean | `false` | Fail immediately on any record error |
 | `idempotency.strategy` | string | `source_id` | Strategy for idempotency keys: `source_id` or `hash` |
 | `source_fields.customer_source_id_field` | string | `source_customer_id` | Field name for customer source ID |
-| `source_fields.customer_metadata_key` | string | `source_customer_id` | Stripe metadata key for customer ID |
+| `source_fields.customer_metadata_key` | string | `null` | Stripe metadata key for customer ID (defaults to `customer_source_id_field`) |
 | `source_fields.subscription_source_id_field` | string | `source_subscription_id` | Field name for subscription source ID |
-| `source_fields.subscription_metadata_key` | string | `source_subscription_id` | Stripe metadata key for subscription ID |
+| `source_fields.subscription_metadata_key` | string | `null` | Stripe metadata key for subscription ID (defaults to `subscription_source_id_field`) |
 | `source_fields.subscription_customer_id_field` | string | `null` | Field in subscription records referencing customer |
 | `source_fields.cancel_at_period_end_field` | string | `cancel_at_period_end` | Field containing cancellation flag |
 | `source_fields.billing_cycle_anchor_field` | string | `null` | Field containing renewal date (enables billing cycle preservation) |
@@ -81,14 +81,7 @@ pip install -e .
   },
   "source_fields": {
     "customer_source_id_field": "source_customer_id",
-    "customer_metadata_key": "source_customer_id",
     "subscription_source_id_field": "source_subscription_id",
-    "subscription_metadata_key": "source_subscription_id",
-    "subscription_customer_id_field": null,
-    "cancel_at_period_end_field": "cancel_at_period_end",
-    "billing_cycle_anchor_field": null,
-    "backdate_start_field": null,
-    "proration_behavior": "none",
     "additional_metadata_fields": []
   },
   "plan_code_to_price_id": {
@@ -105,15 +98,15 @@ pip install -e .
 
 The `source_fields` configuration allows you to adapt the target to work with any source system by specifying which field names contain source IDs and what metadata keys to use in Stripe.
 
+**Metadata Keys:** By default, `customer_metadata_key` and `subscription_metadata_key` use the same value as their corresponding `source_id_field`. Only set them explicitly if you want different names in Stripe metadata.
+
 **Example for Chargify migration:**
 
 ```json
 {
   "source_fields": {
     "customer_source_id_field": "chargify_customer_id",
-    "customer_metadata_key": "chargify_customer_id",
     "subscription_source_id_field": "chargify_subscription_id",
-    "subscription_metadata_key": "chargify_subscription_id",
     "subscription_customer_id_field": "chargify_customer_id",
     "cancel_at_period_end_field": "cancel_at_end_of_period",
     "billing_cycle_anchor_field": "current_period_ends_at",
@@ -126,15 +119,15 @@ The `source_fields` configuration allows you to adapt the target to work with an
 }
 ```
 
-**Example for generic source:**
+**Example with explicit metadata keys (when you want different names in Stripe):**
 
 ```json
 {
   "source_fields": {
     "customer_source_id_field": "external_id",
-    "customer_metadata_key": "external_customer_id",
+    "customer_metadata_key": "legacy_customer_id",
     "subscription_source_id_field": "external_id",
-    "subscription_metadata_key": "external_subscription_id",
+    "subscription_metadata_key": "legacy_subscription_id",
     "additional_metadata_fields": ["salesforce_id", "hubspot_id"]
   }
 }
