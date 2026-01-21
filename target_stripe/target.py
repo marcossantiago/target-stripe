@@ -283,9 +283,8 @@ class TargetStripe(Target):
         if "multipleOf" in normalized and "type" in normalized:
             # Check if type includes "number" (can be a string or list)
             schema_type = normalized["type"]
-            is_number = (
-                schema_type == "number"
-                or (isinstance(schema_type, list) and "number" in schema_type)
+            is_number = schema_type == "number" or (
+                isinstance(schema_type, list) and "number" in schema_type
             )
             if is_number:
                 del normalized["multipleOf"]

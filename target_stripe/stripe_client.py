@@ -454,6 +454,7 @@ class StripeClientWrapper:
         # Handle billing cycle preservation
         if data.get("billing_cycle_anchor"):
             import time
+
             from target_stripe.config import PastDueHandling
 
             current_time = int(time.time())
