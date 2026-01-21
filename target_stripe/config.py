@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -57,7 +57,7 @@ class SourceFieldsConfig(BaseModel):
         default="source_subscription_id",
         description="Metadata key used in Stripe to store the source subscription ID",
     )
-    additional_metadata_fields: list[str] = Field(
+    additional_metadata_fields: List[str] = Field(
         default_factory=list,
         description="Additional fields from source records to include in Stripe metadata",
     )
@@ -94,11 +94,11 @@ class TargetStripeConfig(BaseModel):
         default_factory=SourceFieldsConfig,
         description="Configuration for source system field names",
     )
-    plan_code_to_price_id: dict[str, str] = Field(
+    plan_code_to_price_id: Dict[str, str] = Field(
         default_factory=dict,
         description="Mapping of plan codes to Stripe price IDs",
     )
-    plan_code_mapping_file: str | None = Field(
+    plan_code_mapping_file: Optional[str] = Field(
         default=None,
         description="Path to JSON/YAML file containing plan code to price ID mapping",
     )
@@ -194,7 +194,7 @@ class TargetStripeConfig(BaseModel):
         return self
 
 
-def parse_config(raw_config: dict[str, Any]) -> TargetStripeConfig:
+def parse_config(raw_config: Dict[str, Any]) -> TargetStripeConfig:
     """Parse and validate configuration dictionary.
 
     Args:

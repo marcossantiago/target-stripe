@@ -68,7 +68,12 @@ target-version = "py39"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "B", "C4", "UP"]
-ignore = ["E501"]
+ignore = [
+    "E501",  # Line too long
+    "UP006",  # Use builtin types - conflicts with Pydantic in Python 3.9
+    "UP035",  # Deprecated typing imports - required for Pydantic in Python 3.9
+    "UP045",  # Use X | None - conflicts with Pydantic in Python 3.9
+]
 
 [tool.mypy]
 python_version = "3.9"

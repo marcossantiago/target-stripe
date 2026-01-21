@@ -9,7 +9,7 @@ import sqlite3
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -148,7 +148,7 @@ class MappingStore:
             stripe_id: Stripe ID.
             metadata: Optional metadata to store with the mapping.
         """
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         metadata_json = json.dumps(metadata) if metadata else None
 
         with self._transaction() as conn:
@@ -214,8 +214,8 @@ class MappingStore:
             stripe_id: Resulting Stripe ID (if operation completed).
             ttl_hours: Time to live in hours.
         """
-        now = datetime.now(UTC)
-        expires = datetime.fromtimestamp(now.timestamp() + (ttl_hours * 3600), tz=UTC)
+        now = datetime.now(timezone.utc)
+        expires = datetime.fromtimestamp(now.timestamp() + (ttl_hours * 3600), tz=timezone.utc)
 
         with self._transaction() as conn:
             conn.execute(
@@ -244,7 +244,7 @@ class MappingStore:
             Stripe ID if the key was used and has a result, None otherwise.
         """
         conn = self._get_connection()
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         cursor = conn.execute(
             """
             SELECT stripe_id FROM idempotency_keys
@@ -262,7 +262,7 @@ class MappingStore:
             Number of keys removed.
         """
         conn = self._get_connection()
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         cursor = conn.execute("DELETE FROM idempotency_keys WHERE expires_at < ?", (now,))
         return cursor.rowcount
 
