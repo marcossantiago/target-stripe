@@ -277,11 +277,18 @@ class TargetStripe(Target):
                 # New style: just use minimum: N
                 del normalized["exclusiveMinimum"]
 
-        # Remove multipleOf constraint to avoid decimal operation errors
-        # tap-postgres adds multipleOf: 1 for numeric fields, which can cause
-        # decimal.InvalidOperation errors with large numbers
-        if "multipleOf" in normalized and normalized["multipleOf"] == 1:
-            del normalized["multipleOf"]
+        # Remove multipleOf constraint for numeric types to avoid decimal operation errors
+        # tap-postgres adds multipleOf for numeric fields which causes
+        # decimal.InvalidOperation errors during validation with large numbers
+        if "multipleOf" in normalized and "type" in normalized:
+            # Check if type includes "number" (can be a string or list)
+            schema_type = normalized["type"]
+            is_number = (
+                schema_type == "number"
+                or (isinstance(schema_type, list) and "number" in schema_type)
+            )
+            if is_number:
+                del normalized["multipleOf"]
 
         # Recursively normalize items (for arrays)
         if "items" in normalized and isinstance(normalized["items"], dict):
