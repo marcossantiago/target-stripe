@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from singer_sdk.sinks import BatchSink
@@ -404,16 +405,21 @@ class SubscriptionSink(StripeBaseSink):
         """
         subscription_data: dict[str, Any] = {}
 
-        customer_fields = [
-            "customer_id",
-            "chargify_customer_id",
-            "stripe_customer_id",
-            "customer",
-        ]
-        for field in customer_fields:
-            if field in record and record[field]:
-                subscription_data["customer_id"] = str(record[field])
-                break
+        # Get customer ID - use configured field if set, otherwise fallback
+        customer_id_field = self.source_fields.subscription_customer_id_field
+        if customer_id_field and customer_id_field in record and record[customer_id_field]:
+            subscription_data["customer_id"] = str(record[customer_id_field])
+        else:
+            # Fallback to common field names
+            customer_fields = [
+                "customer_id",
+                "stripe_customer_id",
+                "customer",
+            ]
+            for field in customer_fields:
+                if field in record and record[field]:
+                    subscription_data["customer_id"] = str(record[field])
+                    break
 
         if "price_id" in record and record["price_id"]:
             subscription_data["price_id"] = record["price_id"]
@@ -437,8 +443,50 @@ class SubscriptionSink(StripeBaseSink):
         elif "coupon_code" in record and record["coupon_code"]:
             subscription_data["coupon"] = record["coupon_code"]
 
-        if "cancel_at_period_end" in record:
-            subscription_data["cancel_at_period_end"] = bool(record["cancel_at_period_end"])
+        # Use configured field name for cancel_at_period_end
+        cancel_field = self.source_fields.cancel_at_period_end_field
+        if cancel_field in record:
+            subscription_data["cancel_at_period_end"] = bool(record[cancel_field])
+
+        # Handle billing cycle dates for preserving renewal dates during migration
+        backdate_field = self.source_fields.backdate_start_field
+        anchor_field = self.source_fields.billing_cycle_anchor_field
+
+        if backdate_field and backdate_field in record and record[backdate_field]:
+            try:
+                value = record[backdate_field]
+                if isinstance(value, str):
+                    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    subscription_data["backdate_start_date"] = int(dt.timestamp())
+                elif isinstance(value, datetime):
+                    subscription_data["backdate_start_date"] = int(value.timestamp())
+                elif isinstance(value, int):
+                    subscription_data["backdate_start_date"] = value
+            except (ValueError, AttributeError) as e:
+                logger.warning(
+                    "Failed to parse %s: %s, error: %s",
+                    backdate_field,
+                    record.get(backdate_field),
+                    e,
+                )
+
+        if anchor_field and anchor_field in record and record[anchor_field]:
+            try:
+                value = record[anchor_field]
+                if isinstance(value, str):
+                    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    subscription_data["billing_cycle_anchor"] = int(dt.timestamp())
+                elif isinstance(value, datetime):
+                    subscription_data["billing_cycle_anchor"] = int(value.timestamp())
+                elif isinstance(value, int):
+                    subscription_data["billing_cycle_anchor"] = value
+            except (ValueError, AttributeError) as e:
+                logger.warning(
+                    "Failed to parse %s: %s, error: %s",
+                    anchor_field,
+                    record.get(anchor_field),
+                    e,
+                )
 
         metadata = record.get("metadata", {})
         if isinstance(metadata, dict):

@@ -51,7 +51,13 @@ pip install -e .
 | `source_fields.customer_metadata_key` | string | `source_customer_id` | Stripe metadata key for customer ID |
 | `source_fields.subscription_source_id_field` | string | `source_subscription_id` | Field name for subscription source ID |
 | `source_fields.subscription_metadata_key` | string | `source_subscription_id` | Stripe metadata key for subscription ID |
+| `source_fields.subscription_customer_id_field` | string | `null` | Field in subscription records referencing customer |
+| `source_fields.cancel_at_period_end_field` | string | `cancel_at_period_end` | Field containing cancellation flag |
+| `source_fields.billing_cycle_anchor_field` | string | `null` | Field containing renewal date (enables billing cycle preservation) |
+| `source_fields.backdate_start_field` | string | `null` | Field containing period start date |
+| `source_fields.proration_behavior` | string | `none` | Stripe proration behavior: `none`, `create_prorations`, `always_invoice` |
 | `source_fields.additional_metadata_fields` | array | `[]` | Additional fields to copy to Stripe metadata |
+| `past_due_handling` | string | `skip` | Handle past-due subscriptions: `skip` or `create_fresh` |
 | `plan_code_to_price_id` | object | `{}` | Mapping of plan codes to Stripe price IDs |
 | `plan_code_mapping_file` | string | | Path to JSON/YAML file with plan code mappings |
 | `state_emit_interval` | integer | `100` | Records between STATE emissions |
@@ -77,6 +83,11 @@ pip install -e .
     "customer_metadata_key": "source_customer_id",
     "subscription_source_id_field": "source_subscription_id",
     "subscription_metadata_key": "source_subscription_id",
+    "subscription_customer_id_field": null,
+    "cancel_at_period_end_field": "cancel_at_period_end",
+    "billing_cycle_anchor_field": null,
+    "backdate_start_field": null,
+    "proration_behavior": "none",
     "additional_metadata_fields": []
   },
   "plan_code_to_price_id": {
@@ -97,14 +108,19 @@ The `source_fields` configuration allows you to adapt the target to work with an
 
 ```json
 {
-    "source_fields": {
-      "customer_source_id_field": "chargify_customer_id",
-      "customer_metadata_key": "chargify_customer_id",
-      "subscription_source_id_field": "chargify_subscription_id",
-      "subscription_metadata_key": "chargify_subscription_id",
-      "additional_metadata_fields": ["chargify_customer_ref"]
-    }
-  }
+  "source_fields": {
+    "customer_source_id_field": "chargify_customer_id",
+    "customer_metadata_key": "chargify_customer_id",
+    "subscription_source_id_field": "chargify_subscription_id",
+    "subscription_metadata_key": "chargify_subscription_id",
+    "subscription_customer_id_field": "chargify_customer_id",
+    "cancel_at_period_end_field": "cancel_at_end_of_period",
+    "billing_cycle_anchor_field": "current_period_ends_at",
+    "backdate_start_field": "current_period_started_at",
+    "proration_behavior": "none",
+    "additional_metadata_fields": ["chargify_customer_ref"]
+  },
+  "past_due_handling": "skip"
 }
 ```
 
@@ -121,6 +137,32 @@ The `source_fields` configuration allows you to adapt the target to work with an
   }
 }
 ```
+
+### Billing Cycle Preservation
+
+When migrating subscriptions from another billing system, you can preserve the original renewal dates to avoid double-charging customers who already paid for their current period.
+
+**Enable preservation:** Set `billing_cycle_anchor_field` to the field containing the renewal date in your source data.
+
+**Behavior:**
+- Subscriptions with future renewal dates are created with preserved billing cycles
+- Past-due subscriptions are handled based on `past_due_handling` (`skip` or `create_fresh`)
+- Uses `proration_behavior: "none"` to prevent charges for already-paid periods
+- Sets `collection_method: "send_invoice"` for subscriptions without payment methods
+
+**Example:**
+```json
+{
+  "source_fields": {
+    "billing_cycle_anchor_field": "current_period_ends_at",
+    "backdate_start_field": "current_period_started_at",
+    "proration_behavior": "none"
+  },
+  "past_due_handling": "skip"
+}
+```
+
+**Omit billing_cycle_anchor_field** to create fresh billing cycles starting from migration date.
 
 ## Supported Streams
 
@@ -165,13 +207,15 @@ Creates or updates Stripe Subscriptions.
 | `source_subscription_id` | string | Yes* | Source subscription ID (configurable via `source_fields.subscription_source_id_field`) |
 | `subscription_id` | string | Yes* | Alternative source ID field |
 | `id` | string | Yes* | Alternative source ID field |
-| `customer_id` | string | Yes | Customer reference (source or Stripe ID) |
+| `customer_id` | string | Yes | Customer reference (source or Stripe ID, configurable via `source_fields.subscription_customer_id_field`) |
 | `price_id` | string | Yes** | Stripe price ID |
 | `plan_code` | string | Yes** | Plan code (mapped to price_id) |
 | `quantity` | integer | No | Subscription quantity |
 | `trial_end` | string/int | No | Trial end timestamp or "now" |
 | `coupon` | string | No | Coupon code to apply |
-| `cancel_at_period_end` | boolean | No | Cancel at period end flag |
+| `cancel_at_period_end` | boolean | No | Cancel at period end flag (configurable via `source_fields.cancel_at_period_end_field`) |
+| `current_period_ends_at` | string/int | No | Renewal date for billing cycle preservation (configurable via `source_fields.billing_cycle_anchor_field`) |
+| `current_period_started_at` | string/int | No | Period start date for billing cycle preservation (configurable via `source_fields.backdate_start_field`) |
 | `metadata` | object | No | Additional metadata |
 
 *One of the source ID fields is required. The configured `subscription_source_id_field` takes priority.

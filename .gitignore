@@ -75,7 +75,7 @@ dmypy.json
 .ruff_cache/
 
 # Local mapping database
-*.db
+*.db*
 .target-stripe-mapping.db
 
 # Config files with secrets

@@ -338,10 +338,9 @@ class TestSubscriptionSinkTransform:
         self,
         subscription_sink_instance: SubscriptionSink,
     ) -> None:
-        """Test various customer reference field names."""
+        """Test various customer reference field names (fallback fields only)."""
         for field_name in [
             "customer_id",
-            "chargify_customer_id",
             "stripe_customer_id",
             "customer",
         ]:
@@ -352,6 +351,31 @@ class TestSubscriptionSinkTransform:
             }
             result = subscription_sink_instance._transform_record(record)
             assert result["customer_id"] == "cust_value"
+
+    def test_transform_record_configured_customer_field(
+        self,
+    ) -> None:
+        """Test using configured subscription_customer_id_field for source-specific fields."""
+        from target_stripe.config import SourceFieldsConfig
+
+        class MockSink(SubscriptionSink):
+            def __init__(self) -> None:
+                self._source_fields = SourceFieldsConfig(
+                    subscription_customer_id_field="chargify_customer_id"
+                )
+
+            @property
+            def source_fields(self) -> SourceFieldsConfig:
+                return self._source_fields
+
+        sink = MockSink()
+        record = {
+            "source_subscription_id": "sub_123",
+            "chargify_customer_id": "chargify_cust_456",
+            "price_id": "price_123",
+        }
+        result = sink._transform_record(record)
+        assert result["customer_id"] == "chargify_cust_456"
 
     def test_transform_record_trial_end(
         self,

@@ -24,6 +24,13 @@ class IdempotencyStrategy(str, Enum):
     HASH = "hash"
 
 
+class PastDueHandling(str, Enum):
+    """Strategy for handling subscriptions with past-due billing dates."""
+
+    SKIP = "skip"
+    CREATE_FRESH = "create_fresh"
+
+
 class IdempotencyConfig(BaseModel):
     """Configuration for idempotency handling."""
 
@@ -60,6 +67,26 @@ class SourceFieldsConfig(BaseModel):
     additional_metadata_fields: List[str] = Field(
         default_factory=list,
         description="Additional fields from source records to include in Stripe metadata",
+    )
+    subscription_customer_id_field: Optional[str] = Field(
+        default=None,
+        description="Field name in subscription records containing customer reference (e.g., 'chargify_customer_id'). If not set, uses fallback search.",
+    )
+    cancel_at_period_end_field: str = Field(
+        default="cancel_at_period_end",
+        description="Field name containing cancel at period end flag",
+    )
+    billing_cycle_anchor_field: Optional[str] = Field(
+        default=None,
+        description="Field name containing billing cycle anchor date (e.g., 'current_period_ends_at'). If set, preserves original renewal dates.",
+    )
+    backdate_start_field: Optional[str] = Field(
+        default=None,
+        description="Field name containing backdate start date (e.g., 'current_period_started_at'). Used with billing_cycle_anchor_field.",
+    )
+    proration_behavior: str = Field(
+        default="none",
+        description="Stripe proration behavior when using billing cycle fields: none, create_prorations, or always_invoice",
     )
 
 
@@ -134,6 +161,10 @@ class TargetStripeConfig(BaseModel):
         ge=1.0,
         le=5.0,
         description="Base for exponential backoff (seconds)",
+    )
+    past_due_handling: PastDueHandling = Field(
+        default=PastDueHandling.SKIP,
+        description="How to handle subscriptions with billing_cycle_anchor in the past: skip or create_fresh",
     )
 
     @field_validator("stripe_api_key")

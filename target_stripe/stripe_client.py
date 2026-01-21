@@ -116,6 +116,7 @@ class StripeClientWrapper:
             "customers_updated": 0,
             "subscriptions_created": 0,
             "subscriptions_updated": 0,
+            "subscriptions_skipped": 0,
             "errors": 0,
             "retries": 0,
         }
@@ -450,6 +451,38 @@ class StripeClientWrapper:
         if data.get("cancel_at_period_end") is not None:
             subscription_data["cancel_at_period_end"] = data["cancel_at_period_end"]
 
+        # Handle billing cycle preservation
+        if data.get("billing_cycle_anchor"):
+            import time
+            from target_stripe.config import PastDueHandling
+
+            current_time = int(time.time())
+            billing_anchor = data["billing_cycle_anchor"]
+
+            if billing_anchor < current_time:
+                # Billing date is in the past
+                if self.config.past_due_handling == PastDueHandling.SKIP:
+                    logger.warning(
+                        "Skipping subscription %s: billing_cycle_anchor is in the past",
+                        source_id,
+                    )
+                    self._stats["subscriptions_skipped"] += 1
+                    return f"skipped_{source_id}", False
+                elif self.config.past_due_handling == PastDueHandling.CREATE_FRESH:
+                    logger.info(
+                        "Starting fresh billing cycle for subscription %s (past-due date removed)",
+                        source_id,
+                    )
+                    # Don't set billing_cycle_anchor or backdate_start_date
+            else:
+                # Billing anchor is in the future - preserve billing cycle
+                subscription_data["billing_cycle_anchor"] = billing_anchor
+                subscription_data["proration_behavior"] = (
+                    self.config.source_fields.proration_behavior
+                )
+                if data.get("backdate_start_date"):
+                    subscription_data["backdate_start_date"] = data["backdate_start_date"]
+
         existing_stripe_id = self.mapping_store.get_stripe_id(EntityType.SUBSCRIPTION, source_id)
 
         if self.dry_run:
@@ -514,11 +547,14 @@ class StripeClientWrapper:
 
         subscription_data["customer"] = stripe_customer_id
 
+        # Use send_invoice collection to avoid requiring payment methods
+        # This creates active subscriptions that will be invoiced
         if "default_payment_method" not in subscription_data:
-            subscription_data["payment_behavior"] = "default_incomplete"
-            subscription_data["payment_settings"] = {
-                "save_default_payment_method": "on_subscription"
-            }
+            subscription_data["collection_method"] = "send_invoice"
+            # Only set days_until_due if we're NOT preserving billing cycles
+            # When billing_cycle_anchor is set, the cycle determines invoice timing
+            if "billing_cycle_anchor" not in subscription_data:
+                subscription_data["days_until_due"] = 30  # Invoice due in 30 days
 
         try:
             subscription = self._execute_with_retry(
