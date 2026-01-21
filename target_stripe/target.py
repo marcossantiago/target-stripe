@@ -277,6 +277,12 @@ class TargetStripe(Target):
                 # New style: just use minimum: N
                 del normalized["exclusiveMinimum"]
 
+        # Remove multipleOf constraint to avoid decimal operation errors
+        # tap-postgres adds multipleOf: 1 for numeric fields, which can cause
+        # decimal.InvalidOperation errors with large numbers
+        if "multipleOf" in normalized and normalized["multipleOf"] == 1:
+            del normalized["multipleOf"]
+
         # Recursively normalize items (for arrays)
         if "items" in normalized and isinstance(normalized["items"], dict):
             normalized["items"] = TargetStripe._normalize_schema(normalized["items"])
