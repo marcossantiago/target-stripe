@@ -166,6 +166,10 @@ class TargetStripeConfig(BaseModel):
         default=PastDueHandling.SKIP,
         description="How to handle subscriptions with billing_cycle_anchor in the past: skip or create_fresh",
     )
+    skip_existence_check: bool = Field(
+        default=False,
+        description="If true, skip metadata search for existing records (useful for initial migrations). Uses only local mapping DB.",
+    )
 
     @field_validator("stripe_api_key")
     @classmethod

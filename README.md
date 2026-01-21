@@ -58,6 +58,7 @@ pip install -e .
 | `source_fields.proration_behavior` | string | `none` | Stripe proration behavior: `none`, `create_prorations`, `always_invoice` |
 | `source_fields.additional_metadata_fields` | array | `[]` | Additional fields to copy to Stripe metadata |
 | `past_due_handling` | string | `skip` | Handle past-due subscriptions: `skip` or `create_fresh` |
+| `skip_existence_check` | boolean | `false` | Skip metadata search for existing records (faster for initial migrations) |
 | `plan_code_to_price_id` | object | `{}` | Mapping of plan codes to Stripe price IDs |
 | `plan_code_mapping_file` | string | | Path to JSON/YAML file with plan code mappings |
 | `state_emit_interval` | integer | `100` | Records between STATE emissions |
@@ -120,7 +121,8 @@ The `source_fields` configuration allows you to adapt the target to work with an
     "proration_behavior": "none",
     "additional_metadata_fields": ["chargify_customer_ref"]
   },
-  "past_due_handling": "skip"
+  "past_due_handling": "skip",
+  "skip_existence_check": true
 }
 ```
 
@@ -333,7 +335,9 @@ If a subscription references a customer that doesn't exist:
 
 Customers are deduplicated using:
 1. Local SQLite mapping (source_id → stripe_id)
-2. Stripe metadata search using configured `customer_metadata_key`
+2. Stripe metadata search using configured `customer_metadata_key` (unless `skip_existence_check=true`)
+
+**Performance optimization for initial migrations:** Set `skip_existence_check=true` to skip metadata searches and only use the local mapping DB. This reduces API calls by ~50% when you know records don't exist in Stripe yet.
 
 ### Idempotency
 

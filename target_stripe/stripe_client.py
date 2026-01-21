@@ -297,18 +297,22 @@ class StripeClientWrapper:
                     ) from e
 
         if not existing_stripe_id:
-            existing_customer = self.find_customer_by_metadata(
-                self.config.source_fields.customer_metadata_key, source_id
-            )
-            if existing_customer:
-                self.mapping_store.set_mapping(EntityType.CUSTOMER, source_id, existing_customer.id)
-                customer = self._execute_with_retry(
-                    stripe.Customer.modify,
-                    existing_customer.id,
-                    **customer_data,
+            # Skip metadata search if configured (useful for initial migrations)
+            if not self.config.skip_existence_check:
+                existing_customer = self.find_customer_by_metadata(
+                    self.config.source_fields.customer_metadata_key, source_id
                 )
-                self._stats["customers_updated"] += 1
-                return customer.id, False
+                if existing_customer:
+                    self.mapping_store.set_mapping(
+                        EntityType.CUSTOMER, source_id, existing_customer.id
+                    )
+                    customer = self._execute_with_retry(
+                        stripe.Customer.modify,
+                        existing_customer.id,
+                        **customer_data,
+                    )
+                    self._stats["customers_updated"] += 1
+                    return customer.id, False
 
         idempotency_key = generate_idempotency_key(
             EntityType.CUSTOMER,
