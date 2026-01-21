@@ -231,8 +231,12 @@ class CustomerSink(StripeBaseSink):
 
         field_mapping = {
             "email": "email",
+            "user_email": "email",
+            "customer_email": "email",
             "name": "name",
             "full_name": "name",
+            "display_name": "name",
+            "customer_name": "name",
             "phone": "phone",
             "phone_number": "phone",
             "description": "description",
