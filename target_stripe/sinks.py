@@ -373,6 +373,7 @@ class SubscriptionSink(StripeBaseSink):
 
         for record in records:
             try:
+                logger.debug("Processing subscription record with keys: %s", list(record.keys()))
                 source_id = self._extract_source_id(record)
 
                 # Skip if already migrated
@@ -462,6 +463,12 @@ class SubscriptionSink(StripeBaseSink):
 
         # Get customer ID - use configured field if set, otherwise fallback
         customer_id_field = self.source_fields.subscription_customer_id_field
+        logger.debug(
+            "Extracting customer ID: field=%s, record_keys=%s, value=%s",
+            customer_id_field,
+            list(record.keys()),
+            record.get(customer_id_field) if customer_id_field else None,
+        )
         if customer_id_field and customer_id_field in record and record[customer_id_field]:
             subscription_data["customer_id"] = str(record[customer_id_field])
         else:
@@ -475,6 +482,13 @@ class SubscriptionSink(StripeBaseSink):
                 if field in record and record[field]:
                     subscription_data["customer_id"] = str(record[field])
                     break
+
+        if "customer_id" not in subscription_data:
+            logger.error(
+                "Failed to extract customer_id from record: configured_field=%s, record=%s",
+                customer_id_field,
+                record,
+            )
 
         if "price_id" in record and record["price_id"]:
             subscription_data["price_id"] = record["price_id"]

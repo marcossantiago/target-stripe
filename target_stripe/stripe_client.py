@@ -651,10 +651,7 @@ class StripeClientWrapper:
         # This creates active subscriptions that will be invoiced
         if "default_payment_method" not in subscription_data:
             subscription_data["collection_method"] = "send_invoice"
-            # Only set days_until_due if we're NOT preserving billing cycles
-            # When billing_cycle_anchor is set, the cycle determines invoice timing
-            if "billing_cycle_anchor" not in subscription_data:
-                subscription_data["days_until_due"] = 30  # Invoice due in 30 days
+            subscription_data["days_until_due"] = 30  # Invoice due in 30 days
 
         try:
             subscription = self._execute_with_retry(
