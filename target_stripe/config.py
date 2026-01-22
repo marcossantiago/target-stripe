@@ -178,6 +178,10 @@ class TargetStripeConfig(BaseModel):
         default=False,
         description="If true, skip metadata search for existing records (useful for initial migrations). Uses only local mapping DB.",
     )
+    skip_already_migrated: bool = Field(
+        default=False,
+        description="If true, skip records that are already in the local mapping database. Useful for resuming migrations or running pipeline continuously.",
+    )
 
     @field_validator("stripe_api_key")
     @classmethod

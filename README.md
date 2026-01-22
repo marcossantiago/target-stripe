@@ -58,7 +58,8 @@ pip install -e .
 | `source_fields.proration_behavior` | string | `none` | Stripe proration behavior: `none`, `create_prorations`, `always_invoice` |
 | `source_fields.additional_metadata_fields` | array | `[]` | Additional fields to copy to Stripe metadata |
 | `past_due_handling` | string | `skip` | Handle past-due subscriptions: `skip` or `create_fresh` |
-| `skip_existence_check` | boolean | `false` | Skip metadata search for existing records (faster for initial migrations) |
+| `skip_existence_check` | boolean | `false` | Skip email search for existing records (faster for initial migrations) |
+| `skip_already_migrated` | boolean | `false` | Skip records already in local mapping database (enables safe re-runs) |
 | `plan_code_to_price_id` | object | `{}` | Mapping of plan codes to Stripe price IDs |
 | `plan_code_mapping_file` | string | | Path to JSON/YAML file with plan code mappings |
 | `state_emit_interval` | integer | `100` | Records between STATE emissions |
@@ -115,7 +116,21 @@ The `source_fields` configuration allows you to adapt the target to work with an
     "additional_metadata_fields": ["chargify_customer_ref"]
   },
   "past_due_handling": "skip",
-  "skip_existence_check": true
+  "skip_existence_check": true,
+  "skip_already_migrated": false
+}
+```
+
+**For re-runs or continuous pipelines:**
+
+```json
+{
+  "source_fields": {
+    "customer_source_id_field": "chargify_customer_id",
+    "subscription_source_id_field": "chargify_subscription_id"
+  },
+  "skip_existence_check": true,
+  "skip_already_migrated": true
 }
 ```
 
@@ -327,16 +342,61 @@ If a subscription references a customer that doesn't exist:
 ### Deduplication
 
 Customers are deduplicated using:
-1. Local SQLite mapping (source_id → stripe_id)
-2. Stripe metadata search using configured `customer_metadata_key` (unless `skip_existence_check=true`)
+1. **Local SQLite mapping** (source_id → stripe_id) - checked first
+2. **Stripe ID lookup** - Direct retrieval if mapping exists
+3. **Email search** (fallback if no mapping and `skip_existence_check=false`)
 
-**Performance optimization for initial migrations:** Set `skip_existence_check=true` to skip metadata searches and only use the local mapping DB. This reduces API calls by ~50% when you know records don't exist in Stripe yet.
+**Finding existing customers strategy:**
+- If record exists in local DB → retrieve directly by Stripe ID
+- Otherwise, search Stripe by email address (unless `skip_existence_check=true`)
+- Email search helps find customers when starting with existing Stripe account
+
+**Performance optimization:** Set `skip_existence_check=true` to skip email searches and only use local mapping DB. This reduces API calls by ~50% when you know records don't exist in Stripe yet.
+
+### Handling Re-Runs and Continuous Pipelines
+
+The target supports safe re-runs and continuous pipeline execution with the `skip_already_migrated` option:
+
+```yaml
+# Recommended configuration for re-runs
+target-stripe:
+  config:
+    skip_already_migrated: true    # Skip records in local DB
+    skip_existence_check: true     # Don't search Stripe by email
+```
+
+**When `skip_already_migrated: true`:**
+- Records already in local mapping DB are skipped (no API calls)
+- Only new/unmigrated records are processed
+- Perfect for:
+  - Resuming failed migrations
+  - Re-running pipelines safely
+  - Continuous/incremental syncs
+  - Avoiding duplicate creation
+
+**Example output:**
+```
+INFO Processing batch of 50 customer records
+INFO Batch complete: 50 processed, 0 created, 0 updated, 50 skipped, 0 errors
+```
+
+**Behavior on environment mismatch:**
+- If local DB has a customer but Stripe ID doesn't exist → **fails with clear error**
+- Helps catch configuration issues (e.g., test DB with live API key)
+- Prevents silent data corruption
 
 ### Idempotency
 
-Operations use Stripe idempotency keys based on:
-- `source_id` strategy: `{entity}:{operation}:{source_id}`
-- `hash` strategy: `{entity}:{operation}:{source_id}:{data_hash}`
+Operations use Stripe idempotency keys with unique run identifiers:
+- `source_id` strategy: `{entity}:{operation}:{source_id}:{run_id}`
+- `hash` strategy: `{entity}:{operation}:{source_id}:{data_hash}:{run_id}`
+
+**Run ID Protection:** Each pipeline run generates a unique run ID, preventing idempotency conflicts when re-running within Stripe's 24-hour idempotency window.
+
+**Idempotency error handling:**
+- If Stripe returns an idempotency conflict → returns existing record as success
+- Ensures safe re-runs even with key collisions
+- Logs warnings for troubleshooting
 
 ### Error Handling
 

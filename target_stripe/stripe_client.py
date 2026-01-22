@@ -103,10 +103,15 @@ class StripeClientWrapper:
             config: Target configuration.
             mapping_store: ID mapping store.
         """
+        import uuid
+
         self.config = config
         self.mapping_store = mapping_store
         self.rate_limiter = RateLimiter(config.rate_limit_per_sec)
         self.dry_run = config.dry_run
+
+        # Generate unique run ID to avoid idempotency conflicts across runs
+        self._run_id = str(uuid.uuid4())
 
         stripe.api_key = config.stripe_api_key
         stripe.max_network_retries = 0  # We handle retries ourselves
@@ -186,16 +191,21 @@ class StripeClientWrapper:
             self._stats["errors"] += 1
             raise StripeError(f"Max retries exceeded: {e.last_attempt.exception()}") from e
 
-    def find_customer_by_metadata(
+    def find_existing_customer(
         self,
-        metadata_key: str,
-        metadata_value: str,
+        source_id: str,
+        email: str | None = None,
     ) -> stripe.Customer | None:
-        """Find a customer by metadata value.
+        """Find existing customer in Stripe.
+
+        Strategy:
+        1. If we have a Stripe ID in local DB, retrieve directly by ID
+        2. Otherwise, search by email (natural identifier)
+        3. If found, store mapping for future use
 
         Args:
-            metadata_key: Metadata key to search by.
-            metadata_value: Metadata value to match.
+            source_id: Source system customer ID.
+            email: Customer email address (used for searching if no local mapping).
 
         Returns:
             Customer if found, None otherwise.
@@ -203,17 +213,61 @@ class StripeClientWrapper:
         if self.dry_run:
             return None
 
-        try:
-            customers = self._execute_with_retry(
-                stripe.Customer.search,
-                query=f"metadata['{metadata_key}']:'{metadata_value}'",
-                limit=1,
-            )
-            if customers.data:
-                return customers.data[0]  # type: ignore[no-any-return]
-            return None
-        except stripe.InvalidRequestError:
-            return None
+        # Step 1: Check local DB first
+        existing_stripe_id = self.mapping_store.get_stripe_id(EntityType.CUSTOMER, source_id)
+        if existing_stripe_id:
+            try:
+                customer = self._execute_with_retry(
+                    stripe.Customer.retrieve,
+                    existing_stripe_id,
+                )
+                logger.debug(
+                    "Found customer in local DB: source_id=%s, stripe_id=%s",
+                    source_id,
+                    existing_stripe_id,
+                )
+                return customer  # type: ignore[no-any-return]
+            except stripe.InvalidRequestError as e:
+                if "No such customer" in str(e):
+                    # Customer was deleted from Stripe but still in local DB
+                    logger.error(
+                        "Customer %s mapped to %s not found in Stripe. "
+                        "Possible environment mismatch or customer was deleted. "
+                        "This indicates a data consistency issue.",
+                        source_id,
+                        existing_stripe_id,
+                    )
+                    raise StripePermanentError(
+                        f"Customer {source_id} (stripe_id={existing_stripe_id}) not found in Stripe. "
+                        f"Check environment configuration or investigate if customer was deleted.",
+                        source_id=source_id,
+                        stripe_error=e,
+                    ) from e
+                raise
+
+        # Step 2: No local mapping - search by email if available
+        if email and not self.config.skip_existence_check:
+            try:
+                customers = self._execute_with_retry(
+                    stripe.Customer.list,
+                    email=email,
+                    limit=1,
+                )
+                if customers.data:
+                    customer = customers.data[0]
+                    logger.info(
+                        "Found existing customer by email: source_id=%s, email=%s, stripe_id=%s",
+                        source_id,
+                        email,
+                        customer.id,
+                    )
+                    # Store mapping for future use
+                    self.mapping_store.set_mapping(EntityType.CUSTOMER, source_id, customer.id)
+                    return customer  # type: ignore[no-any-return]
+            except stripe.InvalidRequestError:
+                pass
+
+        return None
 
     def upsert_customer(
         self,
@@ -232,8 +286,6 @@ class StripeClientWrapper:
         Raises:
             StripeError: If the operation fails.
         """
-        existing_stripe_id = self.mapping_store.get_stripe_id(EntityType.CUSTOMER, source_id)
-
         metadata = data.get("metadata", {})
         metadata[self.config.source_fields.get_customer_metadata_key()] = source_id
         # Copy additional metadata fields from source data
@@ -254,6 +306,7 @@ class StripeClientWrapper:
         customer_data = {k: v for k, v in customer_data.items() if v is not None}
 
         if self.dry_run:
+            existing_stripe_id = self.mapping_store.get_stripe_id(EntityType.CUSTOMER, source_id)
             logger.info(
                 "[DRY RUN] Would %s customer: source_id=%s, data=%s",
                 "update" if existing_stripe_id else "create",
@@ -262,19 +315,24 @@ class StripeClientWrapper:
             )
             return existing_stripe_id or f"dry_run_cus_{source_id}", not existing_stripe_id
 
-        if existing_stripe_id:
+        # Try to find existing customer (checks local DB first, then optionally searches by email)
+        existing_customer = self.find_existing_customer(source_id, data.get("email"))
+
+        if existing_customer:
+            # Update existing customer
             idempotency_key = generate_idempotency_key(
                 EntityType.CUSTOMER,
                 source_id,
                 "update",
                 strategy=self.config.idempotency.strategy.value,
                 record_data=customer_data,
+                run_id=self._run_id,
             )
 
             try:
                 customer = self._execute_with_retry(
                     stripe.Customer.modify,
-                    existing_stripe_id,
+                    existing_customer.id,
                     idempotency_key=idempotency_key,
                     **customer_data,
                 )
@@ -285,41 +343,33 @@ class StripeClientWrapper:
                     customer.id,
                 )
                 return customer.id, False
-            except stripe.InvalidRequestError as e:
-                if "No such customer" in str(e):
-                    existing_stripe_id = None
-                else:
-                    self._stats["errors"] += 1
-                    raise StripePermanentError(
-                        f"Failed to update customer {source_id}: {e}",
-                        source_id=source_id,
-                        stripe_error=e,
-                    ) from e
-
-        if not existing_stripe_id:
-            # Skip metadata search if configured (useful for initial migrations)
-            if not self.config.skip_existence_check:
-                existing_customer = self.find_customer_by_metadata(
-                    self.config.source_fields.get_customer_metadata_key(), source_id
+            except stripe.IdempotencyError as e:
+                # Idempotency key was already used - likely a re-run within 24h
+                # Return the existing mapping as success
+                logger.warning(
+                    "Idempotency conflict for customer %s (likely re-run within 24h). "
+                    "Returning existing mapping: stripe_id=%s",
+                    source_id,
+                    existing_customer.id,
                 )
-                if existing_customer:
-                    self.mapping_store.set_mapping(
-                        EntityType.CUSTOMER, source_id, existing_customer.id
-                    )
-                    customer = self._execute_with_retry(
-                        stripe.Customer.modify,
-                        existing_customer.id,
-                        **customer_data,
-                    )
-                    self._stats["customers_updated"] += 1
-                    return customer.id, False
+                self._stats["customers_updated"] += 1
+                return existing_customer.id, False
+            except stripe.InvalidRequestError as e:
+                self._stats["errors"] += 1
+                raise StripePermanentError(
+                    f"Failed to update customer {source_id}: {e}",
+                    source_id=source_id,
+                    stripe_error=e,
+                ) from e
 
+        # Create new customer
         idempotency_key = generate_idempotency_key(
             EntityType.CUSTOMER,
             source_id,
             "create",
             strategy=self.config.idempotency.strategy.value,
             record_data=customer_data,
+            run_id=self._run_id,
         )
 
         try:
@@ -336,6 +386,26 @@ class StripeClientWrapper:
                 customer.id,
             )
             return customer.id, True
+        except stripe.IdempotencyError as e:
+            # Idempotency key was already used for a create operation
+            # Try to find the customer that was created
+            logger.warning(
+                "Idempotency conflict on create for customer %s. "
+                "Searching for previously created customer.",
+                source_id,
+            )
+            existing_customer = self.find_existing_customer(source_id, data.get("email"))
+            if existing_customer:
+                self._stats["customers_created"] += 1
+                return existing_customer.id, True
+            else:
+                # Could not find the customer - re-raise the error
+                self._stats["errors"] += 1
+                raise StripePermanentError(
+                    f"Idempotency conflict for customer {source_id} but could not find created customer",
+                    source_id=source_id,
+                    stripe_error=e,
+                ) from e
         except stripe.InvalidRequestError as e:
             self._stats["errors"] += 1
             raise StripePermanentError(
@@ -507,6 +577,7 @@ class StripeClientWrapper:
                 "update",
                 strategy=self.config.idempotency.strategy.value,
                 record_data=subscription_data,
+                run_id=self._run_id,
             )
 
             update_data = {
@@ -531,9 +602,32 @@ class StripeClientWrapper:
                     subscription.id,
                 )
                 return subscription.id, False
+            except stripe.IdempotencyError as e:
+                # Idempotency key was already used - likely a re-run within 24h
+                logger.warning(
+                    "Idempotency conflict for subscription %s (likely re-run within 24h). "
+                    "Returning existing mapping: stripe_id=%s",
+                    source_id,
+                    existing_stripe_id,
+                )
+                self._stats["subscriptions_updated"] += 1
+                return existing_stripe_id, False
             except stripe.InvalidRequestError as e:
                 if "No such subscription" in str(e):
-                    existing_stripe_id = None
+                    # Subscription was deleted from Stripe but still in local DB
+                    logger.error(
+                        "Subscription %s mapped to %s not found in Stripe. "
+                        "Possible environment mismatch or subscription was deleted. "
+                        "This indicates a data consistency issue.",
+                        source_id,
+                        existing_stripe_id,
+                    )
+                    raise StripePermanentError(
+                        f"Subscription {source_id} (stripe_id={existing_stripe_id}) not found in Stripe. "
+                        f"Check environment configuration or investigate if subscription was deleted.",
+                        source_id=source_id,
+                        stripe_error=e,
+                    ) from e
                 else:
                     self._stats["errors"] += 1
                     raise StripePermanentError(
@@ -548,6 +642,7 @@ class StripeClientWrapper:
             "create",
             strategy=self.config.idempotency.strategy.value,
             record_data=subscription_data,
+            run_id=self._run_id,
         )
 
         subscription_data["customer"] = stripe_customer_id
@@ -575,6 +670,28 @@ class StripeClientWrapper:
                 subscription.id,
             )
             return subscription.id, True
+        except stripe.IdempotencyError as e:
+            # Idempotency key was already used for a create operation
+            # The subscription was likely already created, return existing mapping
+            logger.warning(
+                "Idempotency conflict on create for subscription %s. "
+                "Returning existing mapping if found.",
+                source_id,
+            )
+            existing_stripe_id = self.mapping_store.get_stripe_id(
+                EntityType.SUBSCRIPTION, source_id
+            )
+            if existing_stripe_id:
+                self._stats["subscriptions_created"] += 1
+                return existing_stripe_id, True
+            else:
+                # Could not find the subscription - re-raise the error
+                self._stats["errors"] += 1
+                raise StripePermanentError(
+                    f"Idempotency conflict for subscription {source_id} but could not find created subscription",
+                    source_id=source_id,
+                    stripe_error=e,
+                ) from e
         except stripe.InvalidRequestError as e:
             self._stats["errors"] += 1
             raise StripePermanentError(

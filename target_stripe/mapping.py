@@ -279,6 +279,7 @@ def generate_idempotency_key(
     operation: str,
     strategy: str = "source_id",
     record_data: dict[str, Any] | None = None,
+    run_id: str | None = None,
 ) -> str:
     """Generate an idempotency key for a Stripe operation.
 
@@ -288,6 +289,7 @@ def generate_idempotency_key(
         operation: Operation type (create, update).
         strategy: Key generation strategy (source_id or hash).
         record_data: Record data for hash strategy.
+        run_id: Optional run identifier to ensure uniqueness across runs.
 
     Returns:
         Idempotency key string.
@@ -295,6 +297,12 @@ def generate_idempotency_key(
     if strategy == "hash" and record_data:
         data_str = json.dumps(record_data, sort_keys=True, default=str)
         data_hash = hashlib.sha256(data_str.encode()).hexdigest()[:16]
-        return f"{entity_type.value}:{operation}:{source_id}:{data_hash}"
+        key = f"{entity_type.value}:{operation}:{source_id}:{data_hash}"
     else:
-        return f"{entity_type.value}:{operation}:{source_id}"
+        key = f"{entity_type.value}:{operation}:{source_id}"
+
+    # Add run_id if provided to avoid conflicts across runs
+    if run_id:
+        key = f"{key}:{run_id[:8]}"  # Use first 8 chars of run_id
+
+    return key

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from singer_sdk.sinks import BatchSink
 
 from target_stripe.config import SourceFieldsConfig
+from target_stripe.mapping import EntityType
 from target_stripe.stripe_client import (
     StripeClientWrapper,
     StripeError,
@@ -49,6 +50,7 @@ class StripeBaseSink(BatchSink):
         self._source_fields = target._parsed_config.source_fields  # type: ignore
         self._hard_fail = target._parsed_config.hard_fail  # type: ignore
         self._dry_run = target._parsed_config.dry_run  # type: ignore
+        self._skip_already_migrated = target._parsed_config.skip_already_migrated  # type: ignore
 
     @property
     def stripe_client(self) -> StripeClientWrapper:
@@ -69,6 +71,46 @@ class StripeBaseSink(BatchSink):
     def source_fields(self) -> SourceFieldsConfig:
         """Get cached source_fields config."""
         return self._source_fields  # type: ignore[no-any-return]
+
+    @property
+    def skip_already_migrated(self) -> bool:
+        """Get cached skip_already_migrated setting."""
+        return self._skip_already_migrated  # type: ignore[no-any-return]
+
+    def _should_skip_migrated(
+        self,
+        source_id: str,
+        entity_type: EntityType,
+        context: dict,
+    ) -> bool:
+        """Check if a record should be skipped because it's already migrated.
+
+        Args:
+            source_id: Source system ID.
+            entity_type: Type of entity (customer/subscription).
+            context: Batch context for updating counters.
+
+        Returns:
+            True if record should be skipped, False otherwise.
+        """
+        if not self.skip_already_migrated:
+            return False
+
+        # Check if already in local DB
+        existing_stripe_id = self.stripe_client.mapping_store.get_stripe_id(entity_type, source_id)
+
+        if existing_stripe_id:
+            logger.debug(
+                "Skipping already migrated %s: source_id=%s, stripe_id=%s",
+                entity_type.value,
+                source_id,
+                existing_stripe_id,
+            )
+            context["processed"] += 1
+            context["skipped"] += 1
+            return True
+
+        return False
 
     def _handle_error(
         self,
@@ -118,6 +160,7 @@ class StripeBaseSink(BatchSink):
         context["processed"] = 0
         context["created"] = 0
         context["updated"] = 0
+        context["skipped"] = 0
         context["errors"] = 0
 
     def process_batch(self, context: dict) -> None:
@@ -148,6 +191,11 @@ class CustomerSink(StripeBaseSink):
         for record in records:
             try:
                 source_id = self._extract_source_id(record)
+
+                # Skip if already migrated
+                if self._should_skip_migrated(source_id, EntityType.CUSTOMER, context):
+                    continue
+
                 customer_data = self._transform_record(record)
 
                 stripe_id, was_created = self.stripe_client.upsert_customer(
@@ -168,10 +216,11 @@ class CustomerSink(StripeBaseSink):
                 self._handle_error(record, e)
 
         logger.info(
-            "Batch complete: %d processed, %d created, %d updated, %d errors",
+            "Batch complete: %d processed, %d created, %d updated, %d skipped, %d errors",
             context["processed"],
             context["created"],
             context["updated"],
+            context["skipped"],
             context["errors"],
         )
 
@@ -325,6 +374,11 @@ class SubscriptionSink(StripeBaseSink):
         for record in records:
             try:
                 source_id = self._extract_source_id(record)
+
+                # Skip if already migrated
+                if self._should_skip_migrated(source_id, EntityType.SUBSCRIPTION, context):
+                    continue
+
                 subscription_data = self._transform_record(record)
 
                 stripe_id, was_created = self.stripe_client.upsert_subscription(
@@ -345,10 +399,11 @@ class SubscriptionSink(StripeBaseSink):
                 self._handle_error(record, e)
 
         logger.info(
-            "Batch complete: %d processed, %d created, %d updated, %d errors",
+            "Batch complete: %d processed, %d created, %d updated, %d skipped, %d errors",
             context["processed"],
             context["created"],
             context["updated"],
+            context["skipped"],
             context["errors"],
         )
 
