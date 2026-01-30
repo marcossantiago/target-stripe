@@ -8,6 +8,7 @@ Built with the [Meltano Singer SDK](https://sdk.meltano.com).
 
 - **Upsert Stripe Customers** - Create or update customers with deduplication via metadata search
 - **Upsert Stripe Subscriptions** - Create or update subscriptions with automatic customer resolution
+- **Test Payment Methods** - Automatically attach test credit cards to customers in test mode for realistic testing
 - **Idempotent Operations** - Uses Stripe idempotency keys to ensure safe re-runs
 - **ID Mapping Persistence** - SQLite-backed storage of source_id → stripe_id mappings
 - **Retry Logic** - Exponential backoff for transient Stripe API errors
@@ -46,6 +47,7 @@ pip install -e .
 | `default_currency` | string | `usd` | Default currency for subscriptions (ISO 4217) |
 | `dry_run` | boolean | `false` | Validate data without writing to Stripe |
 | `hard_fail` | boolean | `false` | Fail immediately on any record error |
+| `add_test_payment_methods` | boolean | `false` | Automatically attach test payment methods to customers (only allowed in test mode) |
 | `idempotency.strategy` | string | `source_id` | Strategy for idempotency keys: `source_id` or `hash` |
 | `source_fields.customer_source_id_field` | string | `source_customer_id` | Field name for customer source ID |
 | `source_fields.customer_metadata_key` | string | `null` | Stripe metadata key for customer ID (defaults to `customer_source_id_field`) |
@@ -173,6 +175,37 @@ When migrating subscriptions from another billing system, you can preserve the o
 ```
 
 **Omit billing_cycle_anchor_field** to create fresh billing cycles starting from migration date.
+
+### Test Payment Methods
+
+When testing your integration with Stripe, you can automatically attach test payment methods to customers by enabling the `add_test_payment_methods` configuration option. This is only allowed in test mode for safety.
+
+**Benefits:**
+- Test subscriptions with realistic payment scenarios using `charge_automatically` collection method
+- Avoid manual payment method setup for each test customer
+- Automatically uses Stripe's recommended test card: `4242 4242 4242 4242` (Visa)
+
+**Configuration:**
+```json
+{
+  "stripe_api_key": "sk_test_YOUR_KEY",
+  "stripe_mode": "test",
+  "add_test_payment_methods": true
+}
+```
+
+**Behavior:**
+- When creating customers, a test credit card (4242 4242 4242 4242) is automatically attached as the default payment method
+- Subscriptions are created with `collection_method: "charge_automatically"` instead of `send_invoice`
+- Payment method attachment errors are logged but don't fail customer creation
+- This feature is **only available in test mode** - attempting to enable it in live mode will raise a validation error
+
+**Without test payment methods (default):**
+- Subscriptions use `collection_method: "send_invoice"` with `days_until_due: 30`
+- No payment methods are attached to customers
+- Suitable for migrations where payment methods will be added separately
+
+**Example configuration file:** See `config.test-payment-methods.json` for a complete example.
 
 ## Supported Streams
 

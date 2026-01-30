@@ -4,6 +4,7 @@
   "default_currency": "usd",
   "dry_run": true,
   "hard_fail": false,
+  "add_test_payment_methods": false,
   "idempotency": {
     "strategy": "source_id"
   },

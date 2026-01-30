@@ -385,6 +385,20 @@ class StripeClientWrapper:
                 source_id,
                 customer.id,
             )
+
+            # Attach test payment method if configured
+            if self.config.add_test_payment_methods:
+                try:
+                    self.attach_test_payment_method(customer.id)
+                except Exception as e:
+                    logger.error(
+                        "Failed to attach test payment method to customer %s: %s",
+                        customer.id,
+                        e,
+                    )
+                    # Don't fail the whole operation if payment method attachment fails
+                    # The customer is still created successfully
+
             return customer.id, True
         except stripe.IdempotencyError as e:
             # Idempotency key was already used for a create operation
@@ -649,7 +663,11 @@ class StripeClientWrapper:
 
         # Use send_invoice collection to avoid requiring payment methods
         # This creates active subscriptions that will be invoiced
-        if "default_payment_method" not in subscription_data:
+        # However, if test payment methods are enabled, use charge_automatically
+        if self.config.add_test_payment_methods:
+            # In test mode with payment methods, use charge_automatically
+            subscription_data["collection_method"] = "charge_automatically"
+        elif "default_payment_method" not in subscription_data:
             subscription_data["collection_method"] = "send_invoice"
             subscription_data["days_until_due"] = 30  # Invoice due in 30 days
 
@@ -730,3 +748,71 @@ class StripeClientWrapper:
             return self._execute_with_retry(stripe.Subscription.retrieve, stripe_id)  # type: ignore[no-any-return]
         except stripe.InvalidRequestError:
             return None
+
+    def attach_test_payment_method(
+        self,
+        customer_id: str,
+        test_pm_token: str = "pm_card_visa",
+    ) -> str:
+        """Attach a test payment method to a customer.
+
+        This method should only be used in test mode with the add_test_payment_methods flag enabled.
+
+        Args:
+            customer_id: Stripe customer ID.
+            test_pm_token: Test payment method token (defaults to pm_card_visa).
+                          See https://stripe.com/docs/testing#cards for other test tokens.
+
+        Returns:
+            Payment method ID.
+
+        Raises:
+            ValueError: If not in test mode or test payment methods not enabled.
+            StripeError: If the operation fails.
+        """
+        from target_stripe.config import StripeMode
+
+        if self.config.stripe_mode != StripeMode.TEST:
+            raise ValueError("Test payment methods can only be attached in test mode")
+
+        if not self.config.add_test_payment_methods:
+            raise ValueError(
+                "add_test_payment_methods must be enabled to attach test payment methods"
+            )
+
+        if self.dry_run:
+            logger.info(
+                "[DRY RUN] Would attach test payment method to customer: %s",
+                customer_id,
+            )
+            return f"dry_run_pm_{customer_id}"
+
+        try:
+            # Attach the test payment method token to the customer
+            payment_method = self._execute_with_retry(
+                stripe.PaymentMethod.attach,
+                test_pm_token,
+                customer=customer_id,
+            )
+
+            # Set as default payment method
+            self._execute_with_retry(
+                stripe.Customer.modify,
+                customer_id,
+                invoice_settings={"default_payment_method": payment_method.id},
+            )
+
+            logger.info(
+                "Attached test payment method %s to customer %s",
+                payment_method.id,
+                customer_id,
+            )
+
+            return payment_method.id  # type: ignore[no-any-return]
+
+        except stripe.InvalidRequestError as e:
+            raise StripePermanentError(
+                f"Failed to attach test payment method to customer {customer_id}: {e}",
+                source_id=customer_id,
+                stripe_error=e,
+            ) from e

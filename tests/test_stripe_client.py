@@ -408,3 +408,173 @@ class TestStripeClientWrapper:
         assert "subscriptions_updated" in stats
         assert "errors" in stats
         assert "retries" in stats
+
+
+class TestPaymentMethods:
+    """Tests for payment method functionality."""
+
+    @pytest.fixture
+    def test_config(
+        self,
+        parsed_config: TargetStripeConfig,
+    ) -> TargetStripeConfig:
+        """Create config with test payment methods enabled."""
+        parsed_config.add_test_payment_methods = True
+        return parsed_config
+
+    def test_attach_test_payment_method(
+        self,
+        test_config: TargetStripeConfig,
+        mapping_store: MappingStore,
+        mock_stripe: MagicMock,
+    ) -> None:
+        """Test attaching a test payment method to a customer."""
+        client = StripeClientWrapper(test_config, mapping_store)
+
+        mock_payment_method = MagicMock()
+        mock_payment_method.id = "pm_card_visa"
+        mock_stripe.PaymentMethod.attach.return_value = mock_payment_method
+
+        pm_id = client.attach_test_payment_method("cus_test123")
+
+        assert pm_id == "pm_card_visa"
+        mock_stripe.PaymentMethod.attach.assert_called_once_with(
+            "pm_card_visa",
+            customer="cus_test123",
+        )
+        mock_stripe.Customer.modify.assert_called_once_with(
+            "cus_test123",
+            invoice_settings={"default_payment_method": "pm_card_visa"},
+        )
+
+    def test_attach_test_payment_method_not_in_test_mode(
+        self,
+        parsed_config: TargetStripeConfig,
+        mapping_store: MappingStore,
+        mock_stripe: MagicMock,
+    ) -> None:
+        """Test that payment methods cannot be attached in live mode."""
+        parsed_config.stripe_mode = "live"
+        parsed_config.stripe_api_key = "sk_live_test123"
+        client = StripeClientWrapper(parsed_config, mapping_store)
+
+        with pytest.raises(
+            ValueError, match="Test payment methods can only be attached in test mode"
+        ):
+            client.attach_test_payment_method("cus_test123")
+
+    def test_attach_test_payment_method_flag_not_enabled(
+        self,
+        parsed_config: TargetStripeConfig,
+        mapping_store: MappingStore,
+        mock_stripe: MagicMock,
+    ) -> None:
+        """Test that payment methods cannot be attached without flag enabled."""
+        client = StripeClientWrapper(parsed_config, mapping_store)
+
+        with pytest.raises(
+            ValueError,
+            match="add_test_payment_methods must be enabled to attach test payment methods",
+        ):
+            client.attach_test_payment_method("cus_test123")
+
+    def test_attach_test_payment_method_dry_run(
+        self,
+        test_config: TargetStripeConfig,
+        mapping_store: MappingStore,
+        mock_stripe: MagicMock,
+    ) -> None:
+        """Test attaching test payment method in dry run mode."""
+        test_config.dry_run = True
+        client = StripeClientWrapper(test_config, mapping_store)
+
+        pm_id = client.attach_test_payment_method("cus_test123")
+
+        assert pm_id.startswith("dry_run_pm_")
+        mock_stripe.PaymentMethod.create.assert_not_called()
+
+    def test_upsert_customer_with_test_payment_method(
+        self,
+        test_config: TargetStripeConfig,
+        mapping_store: MappingStore,
+        mock_stripe: MagicMock,
+    ) -> None:
+        """Test that creating a customer automatically attaches payment method when flag is enabled."""
+        client = StripeClientWrapper(test_config, mapping_store)
+
+        mock_customer = MagicMock()
+        mock_customer.id = "cus_test123"
+        mock_stripe.Customer.create.return_value = mock_customer
+
+        mock_payment_method = MagicMock()
+        mock_payment_method.id = "pm_card_visa"
+        mock_stripe.PaymentMethod.attach.return_value = mock_payment_method
+
+        stripe_id, was_created = client.upsert_customer(
+            source_id="12345",
+            data={
+                "email": "test@example.com",
+                "name": "Test User",
+            },
+        )
+
+        assert stripe_id == "cus_test123"
+        assert was_created is True
+        # Payment method should be attached
+        mock_stripe.PaymentMethod.attach.assert_called_once()
+
+    def test_subscription_collection_method_with_test_payment_methods(
+        self,
+        test_config: TargetStripeConfig,
+        mapping_store: MappingStore,
+        mock_stripe: MagicMock,
+    ) -> None:
+        """Test that subscriptions use charge_automatically when test payment methods are enabled."""
+        client = StripeClientWrapper(test_config, mapping_store)
+
+        mapping_store.set_mapping(EntityType.CUSTOMER, "cust_123", "cus_stripe_123")
+
+        mock_subscription = MagicMock()
+        mock_subscription.id = "sub_test123"
+        mock_stripe.Subscription.create.return_value = mock_subscription
+
+        stripe_id, was_created = client.upsert_subscription(
+            source_id="sub_123",
+            data={
+                "customer_id": "cust_123",
+                "price_id": "price_test123",
+            },
+        )
+
+        assert stripe_id == "sub_test123"
+        call_kwargs = mock_stripe.Subscription.create.call_args[1]
+        assert call_kwargs.get("collection_method") == "charge_automatically"
+        assert "days_until_due" not in call_kwargs
+
+    def test_subscription_collection_method_without_test_payment_methods(
+        self,
+        parsed_config: TargetStripeConfig,
+        mapping_store: MappingStore,
+        mock_stripe: MagicMock,
+    ) -> None:
+        """Test that subscriptions use send_invoice when test payment methods are not enabled."""
+        client = StripeClientWrapper(parsed_config, mapping_store)
+
+        mapping_store.set_mapping(EntityType.CUSTOMER, "cust_123", "cus_stripe_123")
+
+        mock_subscription = MagicMock()
+        mock_subscription.id = "sub_test123"
+        mock_stripe.Subscription.create.return_value = mock_subscription
+
+        stripe_id, was_created = client.upsert_subscription(
+            source_id="sub_123",
+            data={
+                "customer_id": "cust_123",
+                "price_id": "price_test123",
+            },
+        )
+
+        assert stripe_id == "sub_test123"
+        call_kwargs = mock_stripe.Subscription.create.call_args[1]
+        assert call_kwargs.get("collection_method") == "send_invoice"
+        assert call_kwargs.get("days_until_due") == 30

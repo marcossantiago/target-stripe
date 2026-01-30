@@ -199,6 +199,33 @@ class TestSourceFieldsConfig:
         assert config.get_subscription_metadata_key() == "chargify_subscription_id"
 
 
+class TestTestPaymentMethods:
+    """Tests for test payment methods configuration."""
+
+    def test_add_test_payment_methods_in_test_mode(self, base_config: dict) -> None:
+        """Test that test payment methods can be enabled in test mode."""
+        base_config["add_test_payment_methods"] = True
+        config = TargetStripeConfig(**base_config)
+        assert config.add_test_payment_methods is True
+        assert config.stripe_mode == StripeMode.TEST
+
+    def test_add_test_payment_methods_in_live_mode_fails(self, base_config: dict) -> None:
+        """Test that test payment methods cannot be enabled in live mode."""
+        base_config["stripe_api_key"] = "sk_live_1234567890abcdefghijklmnop"
+        base_config["stripe_mode"] = "live"
+        base_config["add_test_payment_methods"] = True
+        with pytest.raises(
+            ValueError,
+            match="add_test_payment_methods can only be enabled in test mode",
+        ):
+            TargetStripeConfig(**base_config)
+
+    def test_add_test_payment_methods_defaults_to_false(self, base_config: dict) -> None:
+        """Test that add_test_payment_methods defaults to False."""
+        config = TargetStripeConfig(**base_config)
+        assert config.add_test_payment_methods is False
+
+
 class TestParseConfig:
     """Tests for parse_config function."""
 

@@ -182,6 +182,10 @@ class TargetStripeConfig(BaseModel):
         default=False,
         description="If true, skip records that are already in the local mapping database. Useful for resuming migrations or running pipeline continuously.",
     )
+    add_test_payment_methods: bool = Field(
+        default=False,
+        description="If true, attach test payment methods to customers (only allowed in test mode). Sets collection_method='charge_automatically' for subscriptions.",
+    )
 
     @field_validator("stripe_api_key")
     @classmethod
@@ -210,6 +214,16 @@ class TargetStripeConfig(BaseModel):
             raise ValueError("stripe_mode is 'test' but API key is for live mode")
         if self.stripe_mode == StripeMode.LIVE and key_is_test:
             raise ValueError("stripe_mode is 'live' but API key is for test mode")
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_test_payment_methods(self) -> TargetStripeConfig:
+        """Validate that test payment methods are only enabled in test mode."""
+        if self.add_test_payment_methods and self.stripe_mode != StripeMode.TEST:
+            raise ValueError(
+                "add_test_payment_methods can only be enabled in test mode (stripe_mode='test')"
+            )
 
         return self
 
