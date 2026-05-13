@@ -35,7 +35,6 @@ def base_config() -> dict[str, Any]:
     return {
         "stripe_api_key": "sk_test_1234567890abcdefghijklmnop",
         "stripe_mode": "test",
-        "default_currency": "usd",
         "dry_run": False,
         "hard_fail": False,
         "state_emit_interval": 100,
