@@ -156,6 +156,20 @@ plugins:
             Path to SQLite database file for storing source_id to stripe_id mappings.
             This enables idempotent re-runs and customer-subscription linking.
 
+        - name: skip_existence_check
+          kind: boolean
+          label: Skip Existence Check
+          value: false
+          description: >
+            If true, skip Stripe customer search by email when no local mapping exists.
+
+        - name: skip_already_migrated
+          kind: boolean
+          label: Skip Already Migrated
+          value: false
+          description: >
+            If true, skip records that already have a row in the mapping database.
+
 # Example environment configuration:
 #
 # environments:

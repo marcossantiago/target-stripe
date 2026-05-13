@@ -346,6 +346,31 @@ _STRIP_BEFORE_VALIDATE = frozenset(
     }
 )
 
+_NESTED_JSON_KEYS = frozenset({"customers", "subscriptions"})
+
+
+def _coerce_nested_json_objects(raw: Dict[str, Any]) -> None:
+    """Parse JSON strings for nested objects (some runners pass object settings as strings)."""
+    for key in _NESTED_JSON_KEYS:
+        val = raw.get(key)
+        if isinstance(val, str) and val.strip():
+            try:
+                raw[key] = json.loads(val)
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"Config key {key!r} must be a JSON object or a JSON-encoded string; "
+                    f"failed to parse: {e}"
+                ) from e
+    idem = raw.get("idempotency")
+    if isinstance(idem, str) and idem.strip():
+        try:
+            parsed = json.loads(idem)
+        except json.JSONDecodeError:
+            pass
+        else:
+            if isinstance(parsed, dict):
+                raw["idempotency"] = parsed
+
 
 def parse_config(raw_config: Dict[str, Any]) -> TargetStripeConfig:
     """Parse and validate configuration dictionary.
@@ -362,6 +387,8 @@ def parse_config(raw_config: Dict[str, Any]) -> TargetStripeConfig:
     raw = dict(raw_config)
     for k in _STRIP_BEFORE_VALIDATE:
         raw.pop(k, None)
+
+    _coerce_nested_json_objects(raw)
 
     if "idempotency" in raw and isinstance(raw["idempotency"], dict):
         pass

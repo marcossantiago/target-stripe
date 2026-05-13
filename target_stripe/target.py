@@ -208,6 +208,18 @@ class TargetStripe(Target):
             default=2.0,
             description="Base for exponential backoff (seconds)",
         ),
+        th.Property(
+            "skip_existence_check",
+            th.BooleanType,
+            default=False,
+            description="Skip Stripe email search when resolving existing customers",
+        ),
+        th.Property(
+            "skip_already_migrated",
+            th.BooleanType,
+            default=False,
+            description="Skip records already present in the local mapping database",
+        ),
     ).to_dict()
 
     default_sink_class = CustomerSink
