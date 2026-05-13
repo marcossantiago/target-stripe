@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from singer_sdk.sinks import BatchSink
 
-from target_stripe.config import SourceFieldsConfig
+from target_stripe.config import CustomerSourceFieldsConfig, SubscriptionSourceFieldsConfig
 from target_stripe.mapping import EntityType
 from target_stripe.stripe_client import (
     StripeClientWrapper,
@@ -47,7 +47,6 @@ class StripeBaseSink(BatchSink):
         self._errors: list[dict[str, Any]] = []
         # Cache config values during init (needed for joblib serialization)
         self._stripe_client: StripeClientWrapper = target._stripe_client  # type: ignore
-        self._source_fields = target._parsed_config.source_fields  # type: ignore
         self._hard_fail = target._parsed_config.hard_fail  # type: ignore
         self._dry_run = target._parsed_config.dry_run  # type: ignore
         self._skip_already_migrated = target._parsed_config.skip_already_migrated  # type: ignore
@@ -66,11 +65,6 @@ class StripeBaseSink(BatchSink):
     def dry_run(self) -> bool:
         """Get cached dry_run setting."""
         return self._dry_run  # type: ignore[no-any-return]
-
-    @property
-    def source_fields(self) -> SourceFieldsConfig:
-        """Get cached source_fields config."""
-        return self._source_fields  # type: ignore[no-any-return]
 
     @property
     def skip_already_migrated(self) -> bool:
@@ -179,6 +173,18 @@ class CustomerSink(StripeBaseSink):
 
     name = "customers"
 
+    def __init__(
+        self,
+        target: Target,
+        stream_name: str,
+        schema: dict[str, Any],
+        key_properties: list[str] | None,
+    ) -> None:
+        super().__init__(target, stream_name, schema, key_properties)
+        self._customer_sf: CustomerSourceFieldsConfig = (
+            target._parsed_config.customers.source_fields  # type: ignore[attr-defined]
+        )
+
     def process_batch(self, context: dict) -> None:
         """Process a batch of customer records.
 
@@ -229,7 +235,7 @@ class CustomerSink(StripeBaseSink):
 
         The source ID is used as the primary key for deduplication.
         Supports multiple field names for compatibility with different taps.
-        The configured customer_source_id_field takes priority.
+        The configured customers.source_fields.customer_id takes priority.
 
         Args:
             record: The input record.
@@ -241,7 +247,7 @@ class CustomerSink(StripeBaseSink):
             ValueError: If no source ID can be found.
         """
         # Configured field takes priority
-        configured_field = self.source_fields.customer_source_id_field
+        configured_field = self._customer_sf.customer_id
         if configured_field in record and record[configured_field]:
             return str(record[configured_field])
 
@@ -257,8 +263,8 @@ class CustomerSink(StripeBaseSink):
             if field in record and record[field]:
                 return str(record[field])
 
-        # Check metadata using configured key
-        metadata_key = self.source_fields.get_customer_metadata_key()
+        # Check metadata using configured Stripe metadata key
+        metadata_key = self._customer_sf.stripe_metadata_key_for_source_id()
         if "metadata" in record and isinstance(record["metadata"], dict):
             if metadata_key in record["metadata"]:
                 return str(record["metadata"][metadata_key])
@@ -314,10 +320,11 @@ class CustomerSink(StripeBaseSink):
         else:
             customer_data["metadata"] = {}
 
-        # Copy additional metadata fields from source record
-        for field in self.source_fields.additional_metadata_fields:
-            if field in record:
-                customer_data[field] = record[field]
+        for record_field, _stripe_key in self._customer_sf.metadata:
+            if record_field == self._customer_sf.customer_id:
+                continue
+            if record_field in record:
+                customer_data[record_field] = record[record_field]
 
         return customer_data
 
@@ -361,6 +368,18 @@ class SubscriptionSink(StripeBaseSink):
     """Sink for upserting Stripe Subscriptions."""
 
     name = "subscriptions"
+
+    def __init__(
+        self,
+        target: Target,
+        stream_name: str,
+        schema: dict[str, Any],
+        key_properties: list[str] | None,
+    ) -> None:
+        super().__init__(target, stream_name, schema, key_properties)
+        self._subscription_sf: SubscriptionSourceFieldsConfig = (
+            target._parsed_config.subscriptions.source_fields  # type: ignore[attr-defined]
+        )
 
     def process_batch(self, context: dict) -> None:
         """Process a batch of subscription records.
@@ -411,7 +430,7 @@ class SubscriptionSink(StripeBaseSink):
     def _extract_source_id(self, record: dict[str, Any]) -> str:
         """Extract the source ID from a subscription record.
 
-        The configured subscription_source_id_field takes priority.
+        The configured subscriptions.source_fields.subscription_id takes priority.
 
         Args:
             record: The input record.
@@ -423,7 +442,7 @@ class SubscriptionSink(StripeBaseSink):
             ValueError: If no source ID can be found.
         """
         # Configured field takes priority
-        configured_field = self.source_fields.subscription_source_id_field
+        configured_field = self._subscription_sf.subscription_id
         if configured_field in record and record[configured_field]:
             return str(record[configured_field])
 
@@ -439,8 +458,7 @@ class SubscriptionSink(StripeBaseSink):
             if field in record and record[field]:
                 return str(record[field])
 
-        # Check metadata using configured key
-        metadata_key = self.source_fields.get_subscription_metadata_key()
+        metadata_key = self._subscription_sf.stripe_metadata_key_for_source_id()
         if "metadata" in record and isinstance(record["metadata"], dict):
             if metadata_key in record["metadata"]:
                 return str(record["metadata"][metadata_key])
@@ -462,7 +480,7 @@ class SubscriptionSink(StripeBaseSink):
         subscription_data: dict[str, Any] = {}
 
         # Get customer ID - use configured field if set, otherwise fallback
-        customer_id_field = self.source_fields.subscription_customer_id_field
+        customer_id_field = self._subscription_sf.subscription_customer_id
         logger.debug(
             "Extracting customer ID: field=%s, record_keys=%s, value=%s",
             customer_id_field,
@@ -513,13 +531,13 @@ class SubscriptionSink(StripeBaseSink):
             subscription_data["coupon"] = record["coupon_code"]
 
         # Use configured field name for cancel_at_period_end
-        cancel_field = self.source_fields.cancel_at_period_end_field
+        cancel_field = self._subscription_sf.cancel_at_period_end
         if cancel_field in record:
             subscription_data["cancel_at_period_end"] = bool(record[cancel_field])
 
         # Handle billing cycle dates for preserving renewal dates during migration
-        backdate_field = self.source_fields.backdate_start_field
-        anchor_field = self.source_fields.billing_cycle_anchor_field
+        backdate_field = self._subscription_sf.backdate_start
+        anchor_field = self._subscription_sf.billing_cycle_anchor
 
         if backdate_field and backdate_field in record and record[backdate_field]:
             try:
@@ -562,6 +580,12 @@ class SubscriptionSink(StripeBaseSink):
             subscription_data["metadata"] = metadata.copy()
         else:
             subscription_data["metadata"] = {}
+
+        for record_field, _stripe_key in self._subscription_sf.metadata:
+            if record_field == self._subscription_sf.subscription_id:
+                continue
+            if record_field in record:
+                subscription_data[record_field] = record[record_field]
 
         return subscription_data
 

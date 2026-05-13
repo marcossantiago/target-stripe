@@ -1,24 +1,40 @@
 {
   "stripe_api_key": "sk_test_YOUR_API_KEY_HERE",
   "stripe_mode": "test",
-  "default_currency": "usd",
   "dry_run": true,
   "hard_fail": false,
-  "add_test_payment_methods": false,
   "idempotency": {
     "strategy": "source_id"
   },
-  "source_fields": {
-    "customer_source_id_field": "source_customer_id",
-    "customer_metadata_key": "source_customer_id",
-    "subscription_source_id_field": "source_subscription_id",
-    "subscription_metadata_key": "source_subscription_id",
-    "additional_metadata_fields": []
+  "customers": {
+    "source_fields": {
+      "customer_id": "source_customer_id",
+      "metadata": [
+        ["source_customer_id", "source_customer_id"]
+      ]
+    },
+    "add_test_payment_methods": false
   },
-  "plan_code_to_price_id": {
-    "basic_monthly": "price_XXXXXXXXXXXXXXXX",
-    "pro_monthly": "price_YYYYYYYYYYYYYYYY",
-    "enterprise_annual": "price_ZZZZZZZZZZZZZZZZ"
+  "subscriptions": {
+    "source_fields": {
+      "subscription_id": "source_subscription_id",
+      "subscription_customer_id": null,
+      "cancel_at_period_end": "cancel_at_period_end",
+      "billing_cycle_anchor": null,
+      "backdate_start": null,
+      "proration_behavior": "none",
+      "metadata": [
+        ["source_subscription_id", "source_subscription_id"]
+      ]
+    },
+    "plan_code_to_price_id": {
+      "basic_monthly": "price_XXXXXXXXXXXXXXXX",
+      "pro_monthly": "price_YYYYYYYYYYYYYYYY",
+      "enterprise_annual": "price_ZZZZZZZZZZZZZZZZ"
+    },
+    "plan_code_mapping_file": null,
+    "default_currency": "usd",
+    "past_due_handling": "skip"
   },
   "state_emit_interval": 100,
   "rate_limit_per_sec": 25,

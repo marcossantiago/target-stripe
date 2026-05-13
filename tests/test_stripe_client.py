@@ -214,7 +214,7 @@ class TestStripeClientWrapper:
         mock_stripe: MagicMock,
     ) -> None:
         """Test resolving price ID from plan code mapping."""
-        parsed_config.plan_code_to_price_id = {
+        parsed_config.subscriptions.plan_code_to_price_id = {
             "basic": "price_basic123",
             "pro": "price_pro456",
         }
@@ -419,7 +419,7 @@ class TestPaymentMethods:
         parsed_config: TargetStripeConfig,
     ) -> TargetStripeConfig:
         """Create config with test payment methods enabled."""
-        parsed_config.add_test_payment_methods = True
+        parsed_config.customers.add_test_payment_methods = True
         return parsed_config
 
     def test_attach_test_payment_method(

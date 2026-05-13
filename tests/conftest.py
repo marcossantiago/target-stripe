@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from target_stripe.config import TargetStripeConfig
+from target_stripe.config import TargetStripeConfig, parse_config
 from target_stripe.mapping import MappingStore
 
 
@@ -50,7 +50,7 @@ def base_config() -> dict[str, Any]:
 def parsed_config(base_config: dict[str, Any], temp_db_path: Path) -> TargetStripeConfig:
     """Create a parsed configuration."""
     base_config["mapping_db_path"] = str(temp_db_path)
-    return TargetStripeConfig(**base_config)
+    return parse_config(base_config)
 
 
 @pytest.fixture

@@ -47,12 +47,6 @@ class TargetStripe(Target):
             description="Stripe mode: test or live",
         ),
         th.Property(
-            "default_currency",
-            th.StringType,
-            default="usd",
-            description="Default currency for subscriptions (ISO 4217 code)",
-        ),
-        th.Property(
             "dry_run",
             th.BooleanType,
             default=False,
@@ -78,51 +72,105 @@ class TargetStripe(Target):
             description="Idempotency configuration",
         ),
         th.Property(
-            "source_fields",
+            "customers",
             th.ObjectType(
                 th.Property(
-                    "customer_source_id_field",
-                    th.StringType,
-                    default="source_customer_id",
-                    description="Field name in source records containing the customer ID",
+                    "source_fields",
+                    th.ObjectType(
+                        th.Property(
+                            "customer_id",
+                            th.StringType,
+                            default="source_customer_id",
+                            description="Source record field for customer source ID",
+                        ),
+                        th.Property(
+                            "metadata",
+                            th.ArrayType(th.ArrayType(th.StringType)),
+                            default=[["source_customer_id", "source_customer_id"]],
+                            description="List of [record_field, stripe_metadata_key] pairs",
+                        ),
+                    ),
                 ),
                 th.Property(
-                    "customer_metadata_key",
-                    th.StringType,
-                    default="source_customer_id",
-                    description="Metadata key used in Stripe to store the source customer ID",
-                ),
-                th.Property(
-                    "subscription_source_id_field",
-                    th.StringType,
-                    default="source_subscription_id",
-                    description="Field name in source records containing the subscription ID",
-                ),
-                th.Property(
-                    "subscription_metadata_key",
-                    th.StringType,
-                    default="source_subscription_id",
-                    description="Metadata key used in Stripe to store the source subscription ID",
-                ),
-                th.Property(
-                    "additional_metadata_fields",
-                    th.ArrayType(th.StringType),
-                    default=[],
-                    description="Additional fields from source records to include in Stripe metadata",
+                    "add_test_payment_methods",
+                    th.BooleanType,
+                    default=False,
+                    description="Attach test payment methods in test mode",
                 ),
             ),
-            description="Configuration for source system field names",
+            description="Customer stream configuration",
         ),
         th.Property(
-            "plan_code_to_price_id",
-            th.ObjectType(),
-            default={},
-            description="Mapping of plan codes to Stripe price IDs",
-        ),
-        th.Property(
-            "plan_code_mapping_file",
-            th.StringType,
-            description="Path to JSON/YAML file containing plan code mapping",
+            "subscriptions",
+            th.ObjectType(
+                th.Property(
+                    "source_fields",
+                    th.ObjectType(
+                        th.Property(
+                            "subscription_id",
+                            th.StringType,
+                            default="source_subscription_id",
+                            description="Source record field for subscription source ID",
+                        ),
+                        th.Property(
+                            "subscription_customer_id",
+                            th.StringType,
+                            description="Field referencing customer (optional)",
+                        ),
+                        th.Property(
+                            "cancel_at_period_end",
+                            th.StringType,
+                            default="cancel_at_period_end",
+                        ),
+                        th.Property(
+                            "billing_cycle_anchor",
+                            th.StringType,
+                            description="Field for billing cycle anchor date",
+                        ),
+                        th.Property(
+                            "backdate_start",
+                            th.StringType,
+                            description="Field for backdate / period start",
+                        ),
+                        th.Property(
+                            "proration_behavior",
+                            th.StringType,
+                            default="none",
+                        ),
+                        th.Property(
+                            "metadata",
+                            th.ArrayType(th.ArrayType(th.StringType)),
+                            default=[["source_subscription_id", "source_subscription_id"]],
+                            description="List of [record_field, stripe_metadata_key] pairs",
+                        ),
+                    ),
+                ),
+                th.Property(
+                    "plan_code_to_price_id",
+                    th.ObjectType(),
+                    default={},
+                    description="Mapping of plan codes to Stripe price IDs",
+                ),
+                th.Property(
+                    "plan_code_mapping_file",
+                    th.StringType,
+                    description="Path to JSON/YAML file containing plan code mapping",
+                ),
+                th.Property(
+                    "default_currency",
+                    th.StringType,
+                    default="usd",
+                    description="Default currency for subscriptions (ISO 4217 code)",
+                ),
+                th.Property(
+                    "past_due_handling",
+                    th.StringType,
+                    default="skip",
+                    allowed_values=["skip", "create_fresh"],
+                    description="When billing anchor is in the past",
+                ),
+            ),
+            description="Subscription stream configuration",
         ),
         th.Property(
             "state_emit_interval",

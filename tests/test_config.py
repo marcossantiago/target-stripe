@@ -6,11 +6,13 @@ import json
 import tempfile
 
 import pytest
+from pydantic import ValidationError
 
 from target_stripe.config import (
+    CustomerSourceFieldsConfig,
     IdempotencyStrategy,
-    SourceFieldsConfig,
     StripeMode,
+    SubscriptionSourceFieldsConfig,
     TargetStripeConfig,
     parse_config,
 )
@@ -21,63 +23,65 @@ class TestTargetStripeConfig:
 
     def test_valid_test_config(self, base_config: dict) -> None:
         """Test valid test mode configuration."""
-        config = TargetStripeConfig(**base_config)
+        config = parse_config(base_config)
         assert config.stripe_mode == StripeMode.TEST
-        assert config.default_currency == "usd"
+        assert config.subscriptions.default_currency == "usd"
         assert config.dry_run is False
 
     def test_valid_live_config(self, base_config: dict) -> None:
         """Test valid live mode configuration."""
         base_config["stripe_api_key"] = "sk_live_1234567890abcdefghijklmnop"
         base_config["stripe_mode"] = "live"
-        config = TargetStripeConfig(**base_config)
+        config = parse_config(base_config)
         assert config.stripe_mode == StripeMode.LIVE
 
     def test_invalid_api_key_format(self, base_config: dict) -> None:
         """Test that invalid API key format raises error."""
         base_config["stripe_api_key"] = "invalid_key"
         with pytest.raises(ValueError, match="Invalid Stripe API key format"):
-            TargetStripeConfig(**base_config)
+            parse_config(base_config)
 
     def test_mode_key_mismatch_test(self, base_config: dict) -> None:
         """Test that test key with live mode raises error."""
         base_config["stripe_mode"] = "live"
         with pytest.raises(ValueError, match="stripe_mode is 'live' but API key is for test"):
-            TargetStripeConfig(**base_config)
+            parse_config(base_config)
 
     def test_mode_key_mismatch_live(self, base_config: dict) -> None:
         """Test that live key with test mode raises error."""
         base_config["stripe_api_key"] = "sk_live_1234567890abcdefghijklmnop"
         base_config["stripe_mode"] = "test"
         with pytest.raises(ValueError, match="stripe_mode is 'test' but API key is for live"):
-            TargetStripeConfig(**base_config)
+            parse_config(base_config)
 
     def test_currency_normalization(self, base_config: dict) -> None:
         """Test that currency is normalized to lowercase."""
-        base_config["default_currency"] = "USD"
-        config = TargetStripeConfig(**base_config)
-        assert config.default_currency == "usd"
+        base_config["subscriptions"] = {"default_currency": "USD"}
+        config = parse_config(base_config)
+        assert config.subscriptions.default_currency == "usd"
 
     def test_idempotency_defaults(self, base_config: dict) -> None:
         """Test idempotency defaults."""
-        config = TargetStripeConfig(**base_config)
+        config = parse_config(base_config)
         assert config.idempotency.strategy == IdempotencyStrategy.SOURCE_ID
 
     def test_idempotency_hash_strategy(self, base_config: dict) -> None:
         """Test hash idempotency strategy."""
         base_config["idempotency"] = {"strategy": "hash"}
-        config = TargetStripeConfig(**base_config)
+        config = parse_config(base_config)
         assert config.idempotency.strategy == IdempotencyStrategy.HASH
 
     def test_plan_code_mapping(self, base_config: dict) -> None:
         """Test plan code to price ID mapping."""
-        base_config["plan_code_to_price_id"] = {
-            "basic": "price_basic123",
-            "pro": "price_pro456",
+        base_config["subscriptions"] = {
+            "plan_code_to_price_id": {
+                "basic": "price_basic123",
+                "pro": "price_pro456",
+            },
         }
-        config = TargetStripeConfig(**base_config)
-        assert config.plan_code_to_price_id["basic"] == "price_basic123"
-        assert config.plan_code_to_price_id["pro"] == "price_pro456"
+        config = parse_config(base_config)
+        assert config.subscriptions.plan_code_to_price_id["basic"] == "price_basic123"
+        assert config.subscriptions.plan_code_to_price_id["pro"] == "price_pro456"
 
     def test_plan_code_mapping_from_file(self, base_config: dict) -> None:
         """Test loading plan code mapping from JSON file."""
@@ -88,115 +92,147 @@ class TestTargetStripeConfig:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(mapping, f)
             f.flush()
-            base_config["plan_code_mapping_file"] = f.name
+            base_config["subscriptions"] = {"plan_code_mapping_file": f.name}
 
-        config = TargetStripeConfig(**base_config)
-        assert config.plan_code_to_price_id["basic"] == "price_from_file_basic"
-        assert config.plan_code_to_price_id["enterprise"] == "price_from_file_enterprise"
+        config = parse_config(base_config)
+        assert config.subscriptions.plan_code_to_price_id["basic"] == "price_from_file_basic"
+        assert config.subscriptions.plan_code_to_price_id["enterprise"] == "price_from_file_enterprise"
 
     def test_rate_limit_bounds(self, base_config: dict) -> None:
         """Test rate limit bounds validation."""
         base_config["rate_limit_per_sec"] = 0
         with pytest.raises(ValueError):
-            TargetStripeConfig(**base_config)
+            parse_config(base_config)
 
         base_config["rate_limit_per_sec"] = 101
         with pytest.raises(ValueError):
-            TargetStripeConfig(**base_config)
+            parse_config(base_config)
 
     def test_restricted_api_key(self, base_config: dict) -> None:
         """Test that restricted API keys are accepted."""
         base_config["stripe_api_key"] = "rk_test_1234567890abcdefghijklmnop"
-        config = TargetStripeConfig(**base_config)
+        config = parse_config(base_config)
         assert config.stripe_api_key.startswith("rk_test_")
 
     def test_source_fields_defaults(self, base_config: dict) -> None:
-        """Test source_fields has sensible defaults."""
-        config = TargetStripeConfig(**base_config)
-        assert config.source_fields.customer_source_id_field == "source_customer_id"
-        assert config.source_fields.customer_metadata_key is None
+        """Test default nested source_fields."""
+        config = parse_config(base_config)
+        assert config.customers.source_fields.customer_id == "source_customer_id"
+        assert config.customers.source_fields.metadata == [
+            ("source_customer_id", "source_customer_id"),
+        ]
         assert (
-            config.source_fields.get_customer_metadata_key() == "source_customer_id"
-        )  # Falls back
-        assert config.source_fields.subscription_source_id_field == "source_subscription_id"
-        assert config.source_fields.subscription_metadata_key is None
-        assert (
-            config.source_fields.get_subscription_metadata_key() == "source_subscription_id"
-        )  # Falls back
-        assert config.source_fields.additional_metadata_fields == []
+            config.customers.source_fields.stripe_metadata_key_for_source_id()
+            == "source_customer_id"
+        )
+        assert config.subscriptions.source_fields.subscription_id == "source_subscription_id"
+        assert config.subscriptions.source_fields.metadata == [
+            ("source_subscription_id", "source_subscription_id"),
+        ]
 
     def test_source_fields_custom(self, base_config: dict) -> None:
-        """Test custom source_fields configuration."""
-        base_config["source_fields"] = {
-            "customer_source_id_field": "chargify_customer_id",
-            "customer_metadata_key": "chargify_customer_id",
-            "subscription_source_id_field": "chargify_subscription_id",
-            "subscription_metadata_key": "chargify_subscription_id",
-            "additional_metadata_fields": ["salesforce_id", "hubspot_id"],
+        """Test custom metadata pairs and id column names."""
+        base_config["customers"] = {
+            "source_fields": {
+                "customer_id": "chargify_customer_id",
+                "metadata": [
+                    ["chargify_customer_id", "chargify_customer_id"],
+                    ["salesforce_id", "salesforce_id"],
+                    ["hubspot_id", "hubspot_id"],
+                ],
+            },
         }
-        config = TargetStripeConfig(**base_config)
-        assert config.source_fields.customer_source_id_field == "chargify_customer_id"
-        assert config.source_fields.customer_metadata_key == "chargify_customer_id"
-        assert config.source_fields.subscription_source_id_field == "chargify_subscription_id"
-        assert config.source_fields.subscription_metadata_key == "chargify_subscription_id"
-        assert config.source_fields.additional_metadata_fields == ["salesforce_id", "hubspot_id"]
+        base_config["subscriptions"] = {
+            "source_fields": {
+                "subscription_id": "chargify_subscription_id",
+                "metadata": [
+                    ["chargify_subscription_id", "chargify_subscription_id"],
+                ],
+            },
+        }
+        config = parse_config(base_config)
+        assert config.customers.source_fields.customer_id == "chargify_customer_id"
+        meta = config.customers.source_fields.metadata
+        assert ("chargify_customer_id", "chargify_customer_id") in meta
+        assert ("salesforce_id", "salesforce_id") in meta
+        assert ("hubspot_id", "hubspot_id") in meta
+        assert config.subscriptions.source_fields.subscription_id == "chargify_subscription_id"
 
     def test_source_fields_partial_override(self, base_config: dict) -> None:
-        """Test partial override of source_fields."""
-        base_config["source_fields"] = {
-            "customer_source_id_field": "my_customer_id",
+        """Override only customer id column via nested config."""
+        base_config["customers"] = {
+            "source_fields": {
+                "customer_id": "my_customer_id",
+                "metadata": [["my_customer_id", "my_customer_id"]],
+            },
         }
-        config = TargetStripeConfig(**base_config)
-        assert config.source_fields.customer_source_id_field == "my_customer_id"
-        # Other fields should have defaults
-        assert config.source_fields.customer_metadata_key is None
-        # Should fall back to customer_source_id_field
-        assert config.source_fields.get_customer_metadata_key() == "my_customer_id"
+        config = parse_config(base_config)
+        assert config.customers.source_fields.customer_id == "my_customer_id"
+        assert config.customers.source_fields.metadata == [("my_customer_id", "my_customer_id")]
+        assert config.customers.source_fields.stripe_metadata_key_for_source_id() == "my_customer_id"
+
+    def test_rejects_legacy_flat_source_fields(self, base_config: dict) -> None:
+        """Unknown top-level keys (e.g. legacy layout) are rejected."""
+        base_config["source_fields"] = {"customer_source_id_field": "x"}
+        with pytest.raises(ValidationError):
+            parse_config(base_config)
+
+    def test_nested_config_explicit(self, base_config: dict) -> None:
+        """Accept fully nested customers/subscriptions config."""
+        base_config["customers"] = {
+            "source_fields": {
+                "customer_id": "ext_cust",
+                "metadata": [["ext_cust", "stripe_cust_key"]],
+            },
+            "add_test_payment_methods": False,
+        }
+        base_config["subscriptions"] = {
+            "source_fields": {
+                "subscription_id": "ext_sub",
+                "metadata": [["ext_sub", "stripe_sub_key"]],
+            },
+            "default_currency": "eur",
+            "plan_code_to_price_id": {},
+            "past_due_handling": "skip",
+        }
+        config = parse_config(base_config)
+        assert config.customers.source_fields.customer_id == "ext_cust"
+        assert config.subscriptions.default_currency == "eur"
 
 
-class TestSourceFieldsConfig:
-    """Tests for SourceFieldsConfig."""
+class TestCustomerSourceFieldsConfig:
+    """Tests for CustomerSourceFieldsConfig."""
 
     def test_defaults(self) -> None:
         """Test default values."""
-        config = SourceFieldsConfig()
-        assert config.customer_source_id_field == "source_customer_id"
-        assert config.customer_metadata_key is None
-        assert config.get_customer_metadata_key() == "source_customer_id"
-        assert config.subscription_source_id_field == "source_subscription_id"
-        assert config.subscription_metadata_key is None
-        assert config.get_subscription_metadata_key() == "source_subscription_id"
-        assert config.additional_metadata_fields == []
+        config = CustomerSourceFieldsConfig()
+        assert config.customer_id == "source_customer_id"
+        assert config.stripe_metadata_key_for_source_id() == "source_customer_id"
 
-    def test_custom_values(self) -> None:
-        """Test custom values with explicit metadata keys."""
-        config = SourceFieldsConfig(
-            customer_source_id_field="external_customer_id",
-            customer_metadata_key="ext_cust_id",
-            subscription_source_id_field="external_subscription_id",
-            subscription_metadata_key="ext_sub_id",
-            additional_metadata_fields=["custom_field_1", "custom_field_2"],
-        )
-        assert config.customer_source_id_field == "external_customer_id"
-        assert config.customer_metadata_key == "ext_cust_id"
-        assert config.get_customer_metadata_key() == "ext_cust_id"
-        assert config.subscription_source_id_field == "external_subscription_id"
-        assert config.subscription_metadata_key == "ext_sub_id"
-        assert config.get_subscription_metadata_key() == "ext_sub_id"
-        assert config.additional_metadata_fields == ["custom_field_1", "custom_field_2"]
+    def test_duplicate_record_field_rejected(self) -> None:
+        """Duplicate source columns in metadata must fail validation."""
+        with pytest.raises(ValueError, match="Duplicate record_field"):
+            CustomerSourceFieldsConfig(
+                customer_id="a",
+                metadata=[("a", "x"), ("a", "y")],
+            )
 
-    def test_metadata_key_fallback(self) -> None:
-        """Test that metadata keys fall back to source_id_field when not explicitly set."""
-        config = SourceFieldsConfig(
-            customer_source_id_field="chargify_customer_id",
-            subscription_source_id_field="chargify_subscription_id",
-        )
-        # Metadata keys should be None when not set
-        assert config.customer_metadata_key is None
-        assert config.subscription_metadata_key is None
-        # But helper methods should return the source_id_field values
-        assert config.get_customer_metadata_key() == "chargify_customer_id"
-        assert config.get_subscription_metadata_key() == "chargify_subscription_id"
+    def test_missing_entity_pair_rejected(self) -> None:
+        """Metadata must include the canonical customer_id pair."""
+        with pytest.raises(ValueError, match="exactly one pair"):
+            CustomerSourceFieldsConfig(
+                customer_id="source_customer_id",
+                metadata=[("other", "other")],
+            )
+
+
+class TestSubscriptionSourceFieldsConfig:
+    """Tests for SubscriptionSourceFieldsConfig."""
+
+    def test_defaults(self) -> None:
+        config = SubscriptionSourceFieldsConfig()
+        assert config.subscription_id == "source_subscription_id"
+        assert config.stripe_metadata_key_for_source_id() == "source_subscription_id"
 
 
 class TestTestPaymentMethods:
@@ -204,26 +240,26 @@ class TestTestPaymentMethods:
 
     def test_add_test_payment_methods_in_test_mode(self, base_config: dict) -> None:
         """Test that test payment methods can be enabled in test mode."""
-        base_config["add_test_payment_methods"] = True
-        config = TargetStripeConfig(**base_config)
-        assert config.add_test_payment_methods is True
+        base_config["customers"] = {"add_test_payment_methods": True}
+        config = parse_config(base_config)
+        assert config.customers.add_test_payment_methods is True
         assert config.stripe_mode == StripeMode.TEST
 
     def test_add_test_payment_methods_in_live_mode_fails(self, base_config: dict) -> None:
         """Test that test payment methods cannot be enabled in live mode."""
         base_config["stripe_api_key"] = "sk_live_1234567890abcdefghijklmnop"
         base_config["stripe_mode"] = "live"
-        base_config["add_test_payment_methods"] = True
+        base_config["customers"] = {"add_test_payment_methods": True}
         with pytest.raises(
             ValueError,
             match="add_test_payment_methods can only be enabled in test mode",
         ):
-            TargetStripeConfig(**base_config)
+            parse_config(base_config)
 
     def test_add_test_payment_methods_defaults_to_false(self, base_config: dict) -> None:
         """Test that add_test_payment_methods defaults to False."""
-        config = TargetStripeConfig(**base_config)
-        assert config.add_test_payment_methods is False
+        config = parse_config(base_config)
+        assert config.customers.add_test_payment_methods is False
 
 
 class TestParseConfig:

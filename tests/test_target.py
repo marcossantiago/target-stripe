@@ -85,24 +85,23 @@ class TestTargetStripe:
         assert "dry_run" in properties
         assert "hard_fail" in properties
         assert "idempotency" in properties
-        assert "source_fields" in properties
-        assert "plan_code_to_price_id" in properties
+        assert "customers" in properties
+        assert "subscriptions" in properties
         assert "state_emit_interval" in properties
         assert "rate_limit_per_sec" in properties
 
     def test_config_schema_source_fields(self) -> None:
-        """Test that source_fields schema is properly defined."""
+        """Test that nested customers/subscriptions schema is defined."""
         schema = TargetStripe.config_jsonschema
-        source_fields = schema["properties"]["source_fields"]
-        # Singer SDK wraps optional objects as nullable
-        sf_type = source_fields["type"]
-        assert "object" in sf_type if isinstance(sf_type, list) else sf_type == "object"
-        sf_props = source_fields.get("properties", {})
-        assert "customer_source_id_field" in sf_props
-        assert "customer_metadata_key" in sf_props
-        assert "subscription_source_id_field" in sf_props
-        assert "subscription_metadata_key" in sf_props
-        assert "additional_metadata_fields" in sf_props
+        cust = schema["properties"]["customers"]
+        ctype = cust["type"]
+        assert "object" in ctype if isinstance(ctype, list) else ctype == "object"
+        cprops = cust.get("properties", {})
+        assert "source_fields" in cprops
+        subs = schema["properties"]["subscriptions"]
+        sprops = subs.get("properties", {})
+        assert "source_fields" in sprops
+        assert "plan_code_to_price_id" in sprops
 
     def test_config_schema_stripe_api_key_is_secret(self) -> None:
         """Test that stripe_api_key is marked as secret."""

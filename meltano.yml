@@ -69,44 +69,43 @@ plugins:
             Idempotency configuration. Strategy can be 'source_id' (default)
             or 'hash' (includes record data in idempotency key).
 
-        # Source Fields Configuration
-        - name: source_fields
+        # Customer stream (field names + metadata mapping + test PMs)
+        - name: customers
           kind: object
-          label: Source Fields Configuration
+          label: Customers
           value:
-            customer_source_id_field: source_customer_id
-            customer_metadata_key: source_customer_id
-            subscription_source_id_field: source_subscription_id
-            subscription_metadata_key: source_subscription_id
-            additional_metadata_fields: []
+            source_fields:
+              customer_id: source_customer_id
+              metadata:
+                - [source_customer_id, source_customer_id]
+            add_test_payment_methods: false
           description: >
-            Configuration for source system field names. Allows adaptation to
-            any source system by specifying which fields contain source IDs
-            and what metadata keys to use in Stripe.
+            Customer loader settings: source_fields.customer_id and metadata pairs
+            [record_column, stripe_metadata_key]; add_test_payment_methods for test mode.
 
-        # Plan Code Mapping
-        - name: plan_code_to_price_id
+        # Subscription stream (fields, pricing, currency)
+        - name: subscriptions
           kind: object
-          label: Plan Code to Price ID Mapping
-          value: {}
+          label: Subscriptions
+          value:
+            source_fields:
+              subscription_id: source_subscription_id
+              metadata:
+                - [source_subscription_id, source_subscription_id]
+              cancel_at_period_end: cancel_at_period_end
+              proration_behavior: none
+            plan_code_to_price_id: {}
+            default_currency: usd
+            past_due_handling: skip
           description: >
-            Mapping of plan codes (from source system) to Stripe price IDs.
-            Example: {"basic": "price_123", "pro": "price_456"}
+            Subscription loader settings, plan_code_to_price_id mapping,
+            default_currency, past_due_handling.
 
         - name: plan_code_mapping_file
           kind: string
           label: Plan Code Mapping File
           description: >
-            Path to a JSON or YAML file containing plan code to price ID mappings.
-            Useful for managing large mappings outside of meltano.yml.
-
-        # Currency Settings
-        - name: default_currency
-          kind: string
-          label: Default Currency
-          value: usd
-          description: >
-            Default currency code (ISO 4217) for subscriptions.
+            Path to JSON/YAML plan code mappings (merged into subscriptions.plan_code_to_price_id).
 
         # Performance Settings
         - name: rate_limit_per_sec

@@ -286,12 +286,14 @@ class StripeClientWrapper:
         Raises:
             StripeError: If the operation fails.
         """
-        metadata = data.get("metadata", {})
-        metadata[self.config.source_fields.get_customer_metadata_key()] = source_id
-        # Copy additional metadata fields from source data
-        for field in self.config.source_fields.additional_metadata_fields:
-            if field in data:
-                metadata[field] = data[field]
+        csf = self.config.customers.source_fields
+        metadata = dict(data.get("metadata", {}))
+        metadata[csf.stripe_metadata_key_for_source_id()] = source_id
+        for record_field, stripe_key in csf.metadata:
+            if record_field == csf.customer_id:
+                continue
+            if record_field in data and data[record_field] is not None:
+                metadata[stripe_key] = data[record_field]
 
         customer_data = {
             "email": data.get("email"),
@@ -343,7 +345,7 @@ class StripeClientWrapper:
                     customer.id,
                 )
                 return customer.id, False
-            except stripe.IdempotencyError as e:
+            except stripe.IdempotencyError:
                 # Idempotency key was already used - likely a re-run within 24h
                 # Return the existing mapping as success
                 logger.warning(
@@ -387,7 +389,7 @@ class StripeClientWrapper:
             )
 
             # Attach test payment method if configured
-            if self.config.add_test_payment_methods:
+            if self.config.customers.add_test_payment_methods:
                 try:
                     self.attach_test_payment_method(customer.id)
                 except Exception as e:
@@ -458,8 +460,9 @@ class StripeClientWrapper:
         if price_id:
             return price_id
 
-        if plan_code and plan_code in self.config.plan_code_to_price_id:
-            return self.config.plan_code_to_price_id[plan_code]
+        subs = self.config.subscriptions
+        if plan_code and plan_code in subs.plan_code_to_price_id:
+            return subs.plan_code_to_price_id[plan_code]
 
         if plan_code and plan_code.startswith("price_"):
             return plan_code
@@ -503,8 +506,14 @@ class StripeClientWrapper:
             data.get("price_id"),
         )
 
-        metadata = data.get("metadata", {})
-        metadata[self.config.source_fields.get_subscription_metadata_key()] = source_id
+        ssf = self.config.subscriptions.source_fields
+        metadata = dict(data.get("metadata", {}))
+        metadata[ssf.stripe_metadata_key_for_source_id()] = source_id
+        for record_field, stripe_key in ssf.metadata:
+            if record_field == ssf.subscription_id:
+                continue
+            if record_field in data and data[record_field] is not None:
+                metadata[stripe_key] = data[record_field]
 
         subscription_data: dict[str, Any] = {
             "metadata": metadata,
@@ -550,14 +559,14 @@ class StripeClientWrapper:
 
             if billing_anchor < current_time:
                 # Billing date is in the past
-                if self.config.past_due_handling == PastDueHandling.SKIP:
+                if self.config.subscriptions.past_due_handling == PastDueHandling.SKIP:
                     logger.warning(
                         "Skipping subscription %s: billing_cycle_anchor is in the past",
                         source_id,
                     )
                     self._stats["subscriptions_skipped"] += 1
                     return f"skipped_{source_id}", False
-                elif self.config.past_due_handling == PastDueHandling.CREATE_FRESH:
+                elif self.config.subscriptions.past_due_handling == PastDueHandling.CREATE_FRESH:
                     logger.info(
                         "Starting fresh billing cycle for subscription %s (past-due date removed)",
                         source_id,
@@ -566,9 +575,7 @@ class StripeClientWrapper:
             else:
                 # Billing anchor is in the future - preserve billing cycle
                 subscription_data["billing_cycle_anchor"] = billing_anchor
-                subscription_data["proration_behavior"] = (
-                    self.config.source_fields.proration_behavior
-                )
+                subscription_data["proration_behavior"] = ssf.proration_behavior
                 if data.get("backdate_start_date"):
                     subscription_data["backdate_start_date"] = data["backdate_start_date"]
 
@@ -616,7 +623,7 @@ class StripeClientWrapper:
                     subscription.id,
                 )
                 return subscription.id, False
-            except stripe.IdempotencyError as e:
+            except stripe.IdempotencyError:
                 # Idempotency key was already used - likely a re-run within 24h
                 logger.warning(
                     "Idempotency conflict for subscription %s (likely re-run within 24h). "
@@ -664,7 +671,7 @@ class StripeClientWrapper:
         # Use send_invoice collection to avoid requiring payment methods
         # This creates active subscriptions that will be invoiced
         # However, if test payment methods are enabled, use charge_automatically
-        if self.config.add_test_payment_methods:
+        if self.config.customers.add_test_payment_methods:
             # In test mode with payment methods, use charge_automatically
             subscription_data["collection_method"] = "charge_automatically"
         elif "default_payment_method" not in subscription_data:
@@ -775,7 +782,7 @@ class StripeClientWrapper:
         if self.config.stripe_mode != StripeMode.TEST:
             raise ValueError("Test payment methods can only be attached in test mode")
 
-        if not self.config.add_test_payment_methods:
+        if not self.config.customers.add_test_payment_methods:
             raise ValueError(
                 "add_test_payment_methods must be enabled to attach test payment methods"
             )

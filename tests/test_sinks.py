@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from target_stripe.config import SourceFieldsConfig
+from target_stripe.config import CustomerSourceFieldsConfig, SubscriptionSourceFieldsConfig
 from target_stripe.sinks import (
     CustomerSink,
     SubscriptionSink,
@@ -67,11 +67,7 @@ class TestCustomerSinkTransform:
 
         class MockSink(CustomerSink):
             def __init__(self) -> None:
-                self._source_fields = SourceFieldsConfig()
-
-            @property
-            def source_fields(self) -> SourceFieldsConfig:
-                return self._source_fields
+                self._customer_sf = CustomerSourceFieldsConfig()
 
         return MockSink()
 
@@ -193,8 +189,12 @@ class TestCustomerSinkTransform:
     ) -> None:
         """Test that additional_metadata_fields are extracted."""
         # Configure additional metadata fields
-        customer_sink_instance._source_fields = SourceFieldsConfig(
-            additional_metadata_fields=["salesforce_id", "hubspot_id"]
+        customer_sink_instance._customer_sf = CustomerSourceFieldsConfig(
+            metadata=[
+                ("source_customer_id", "source_customer_id"),
+                ("salesforce_id", "salesforce_id"),
+                ("hubspot_id", "hubspot_id"),
+            ],
         )
         record = {
             "email": "test@example.com",
@@ -259,11 +259,7 @@ class TestSubscriptionSinkTransform:
 
         class MockSink(SubscriptionSink):
             def __init__(self) -> None:
-                self._source_fields = SourceFieldsConfig()
-
-            @property
-            def source_fields(self) -> SourceFieldsConfig:
-                return self._source_fields
+                self._subscription_sf = SubscriptionSourceFieldsConfig()
 
         return MockSink()
 
@@ -355,18 +351,13 @@ class TestSubscriptionSinkTransform:
     def test_transform_record_configured_customer_field(
         self,
     ) -> None:
-        """Test using configured subscription_customer_id_field for source-specific fields."""
-        from target_stripe.config import SourceFieldsConfig
+        """Test using configured subscription_customer_id for source-specific fields."""
 
         class MockSink(SubscriptionSink):
             def __init__(self) -> None:
-                self._source_fields = SourceFieldsConfig(
-                    subscription_customer_id_field="chargify_customer_id"
+                self._subscription_sf = SubscriptionSourceFieldsConfig(
+                    subscription_customer_id="chargify_customer_id",
                 )
-
-            @property
-            def source_fields(self) -> SourceFieldsConfig:
-                return self._source_fields
 
         sink = MockSink()
         record = {

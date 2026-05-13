@@ -44,26 +44,25 @@ pip install -e .
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `stripe_mode` | string | `test` | Stripe mode: `test` or `live` |
-| `default_currency` | string | `usd` | Default currency for subscriptions (ISO 4217) |
 | `dry_run` | boolean | `false` | Validate data without writing to Stripe |
 | `hard_fail` | boolean | `false` | Fail immediately on any record error |
-| `add_test_payment_methods` | boolean | `false` | Automatically attach test payment methods to customers (only allowed in test mode) |
 | `idempotency.strategy` | string | `source_id` | Strategy for idempotency keys: `source_id` or `hash` |
-| `source_fields.customer_source_id_field` | string | `source_customer_id` | Field name for customer source ID |
-| `source_fields.customer_metadata_key` | string | `null` | Stripe metadata key for customer ID (defaults to `customer_source_id_field`) |
-| `source_fields.subscription_source_id_field` | string | `source_subscription_id` | Field name for subscription source ID |
-| `source_fields.subscription_metadata_key` | string | `null` | Stripe metadata key for subscription ID (defaults to `subscription_source_id_field`) |
-| `source_fields.subscription_customer_id_field` | string | `null` | Field in subscription records referencing customer |
-| `source_fields.cancel_at_period_end_field` | string | `cancel_at_period_end` | Field containing cancellation flag |
-| `source_fields.billing_cycle_anchor_field` | string | `null` | Field containing renewal date (enables billing cycle preservation) |
-| `source_fields.backdate_start_field` | string | `null` | Field containing period start date |
-| `source_fields.proration_behavior` | string | `none` | Stripe proration behavior: `none`, `create_prorations`, `always_invoice` |
-| `source_fields.additional_metadata_fields` | array | `[]` | Additional fields to copy to Stripe metadata |
-| `past_due_handling` | string | `skip` | Handle past-due subscriptions: `skip` or `create_fresh` |
-| `skip_existence_check` | boolean | `false` | Skip email search for existing records (faster for initial migrations) |
-| `skip_already_migrated` | boolean | `false` | Skip records already in local mapping database (enables safe re-runs) |
-| `plan_code_to_price_id` | object | `{}` | Mapping of plan codes to Stripe price IDs |
-| `plan_code_mapping_file` | string | | Path to JSON/YAML file with plan code mappings |
+| `customers.source_fields.customer_id` | string | `source_customer_id` | Top-level record column for customer source ID |
+| `customers.source_fields.metadata` | array | see sample | List of `[record_field, stripe_metadata_key]` pairs (must include one pair for `customer_id`) |
+| `customers.add_test_payment_methods` | boolean | `false` | Attach test payment methods (test mode only) |
+| `subscriptions.source_fields.subscription_id` | string | `source_subscription_id` | Column for subscription source ID |
+| `subscriptions.source_fields.subscription_customer_id` | string | `null` | Column linking subscription row to customer |
+| `subscriptions.source_fields.cancel_at_period_end` | string | `cancel_at_period_end` | Column for cancel-at-period-end flag |
+| `subscriptions.source_fields.billing_cycle_anchor` | string | `null` | Column for renewal / anchor date |
+| `subscriptions.source_fields.backdate_start` | string | `null` | Column for period start / backdate |
+| `subscriptions.source_fields.proration_behavior` | string | `none` | Stripe proration when preserving billing cycle |
+| `subscriptions.source_fields.metadata` | array | see sample | `[record_field, stripe_metadata_key]` pairs (must include `subscription_id`) |
+| `subscriptions.plan_code_to_price_id` | object | `{}` | Plan code → Stripe price ID |
+| `subscriptions.plan_code_mapping_file` | string | `null` | File merged into `plan_code_to_price_id` |
+| `subscriptions.default_currency` | string | `usd` | Default currency (ISO 4217) |
+| `subscriptions.past_due_handling` | string | `skip` | `skip` or `create_fresh` when anchor is in the past |
+| `skip_existence_check` | boolean | `false` | Skip email search for existing customers |
+| `skip_already_migrated` | boolean | `false` | Skip rows already in local mapping DB |
 | `state_emit_interval` | integer | `100` | Records between STATE emissions |
 | `rate_limit_per_sec` | number | `25.0` | Max Stripe API requests per second |
 | `mapping_db_path` | string | `.target-stripe-mapping.db` | Path to SQLite mapping database |
@@ -82,42 +81,66 @@ pip install -e .
   "idempotency": {
     "strategy": "source_id"
   },
-  "source_fields": {
-    "customer_source_id_field": "source_customer_id",
-    "subscription_source_id_field": "source_subscription_id",
-    "additional_metadata_fields": []
+  "customers": {
+    "source_fields": {
+      "customer_id": "source_customer_id",
+      "metadata": [
+        ["source_customer_id", "source_customer_id"]
+      ]
+    },
+    "add_test_payment_methods": false
   },
-  "plan_code_to_price_id": {
-    "basic_monthly": "price_1234567890",
-    "pro_monthly": "price_0987654321",
-    "enterprise_annual": "price_abcdefghij"
+  "subscriptions": {
+    "source_fields": {
+      "subscription_id": "source_subscription_id",
+      "metadata": [
+        ["source_subscription_id", "source_subscription_id"]
+      ]
+    },
+    "plan_code_to_price_id": {
+      "basic_monthly": "price_1234567890",
+      "pro_monthly": "price_0987654321",
+      "enterprise_annual": "price_abcdefghij"
+    },
+    "default_currency": "usd",
+    "past_due_handling": "skip"
   },
   "rate_limit_per_sec": 25,
   "state_emit_interval": 100
 }
 ```
 
-### Configuring Source Fields
+### Configuring Source Fields and Metadata
 
-The `source_fields` configuration allows you to adapt the target to work with any source system by specifying which field names contain source IDs and what metadata keys to use in Stripe.
-
-**Metadata Keys:** By default, `customer_metadata_key` and `subscription_metadata_key` use the same value as their corresponding `source_id_field`. Only set them explicitly if you want different names in Stripe metadata.
+Under `customers.source_fields` and `subscriptions.source_fields`, set **`customer_id`** / **`subscription_id`** to the source-system column name, and list **`metadata`** as pairs `[source_column, stripe_metadata_key]`. There must be exactly one pair whose first element equals that id column; its second element is where the target writes the source ID in Stripe metadata. Additional pairs copy other top-level columns into Stripe metadata.
 
 **Example for Chargify migration:**
 
 ```json
 {
-  "source_fields": {
-    "customer_source_id_field": "chargify_customer_id",
-    "subscription_source_id_field": "chargify_subscription_id",
-    "subscription_customer_id_field": "chargify_customer_id",
-    "cancel_at_period_end_field": "cancel_at_end_of_period",
-    "billing_cycle_anchor_field": "current_period_ends_at",
-    "backdate_start_field": "current_period_started_at",
-    "proration_behavior": "none",
-    "additional_metadata_fields": ["chargify_customer_ref"]
+  "customers": {
+    "source_fields": {
+      "customer_id": "chargify_customer_id",
+      "metadata": [
+        ["chargify_customer_id", "chargify_customer_id"],
+        ["chargify_customer_ref", "chargify_customer_ref"]
+      ]
+    }
   },
-  "past_due_handling": "skip",
+  "subscriptions": {
+    "source_fields": {
+      "subscription_id": "chargify_subscription_id",
+      "subscription_customer_id": "chargify_customer_id",
+      "cancel_at_period_end": "cancel_at_end_of_period",
+      "billing_cycle_anchor": "current_period_ends_at",
+      "backdate_start": "current_period_started_at",
+      "proration_behavior": "none",
+      "metadata": [
+        ["chargify_subscription_id", "chargify_subscription_id"]
+      ]
+    },
+    "past_due_handling": "skip"
+  },
   "skip_existence_check": true,
   "skip_already_migrated": false
 }
@@ -127,25 +150,44 @@ The `source_fields` configuration allows you to adapt the target to work with an
 
 ```json
 {
-  "source_fields": {
-    "customer_source_id_field": "chargify_customer_id",
-    "subscription_source_id_field": "chargify_subscription_id"
+  "customers": {
+    "source_fields": {
+      "customer_id": "chargify_customer_id",
+      "metadata": [["chargify_customer_id", "chargify_customer_id"]]
+    }
+  },
+  "subscriptions": {
+    "source_fields": {
+      "subscription_id": "chargify_subscription_id",
+      "metadata": [["chargify_subscription_id", "chargify_subscription_id"]]
+    }
   },
   "skip_existence_check": true,
   "skip_already_migrated": true
 }
 ```
 
-**Example with explicit metadata keys (when you want different names in Stripe):**
+**Different Stripe metadata keys than column names:**
 
 ```json
 {
-  "source_fields": {
-    "customer_source_id_field": "external_id",
-    "customer_metadata_key": "legacy_customer_id",
-    "subscription_source_id_field": "external_id",
-    "subscription_metadata_key": "legacy_subscription_id",
-    "additional_metadata_fields": ["salesforce_id", "hubspot_id"]
+  "customers": {
+    "source_fields": {
+      "customer_id": "external_id",
+      "metadata": [
+        ["external_id", "legacy_customer_id"],
+        ["salesforce_id", "salesforce_id"],
+        ["hubspot_id", "hubspot_id"]
+      ]
+    }
+  },
+  "subscriptions": {
+    "source_fields": {
+      "subscription_id": "external_id",
+      "metadata": [
+        ["external_id", "legacy_subscription_id"]
+      ]
+    }
   }
 }
 ```
@@ -154,31 +196,35 @@ The `source_fields` configuration allows you to adapt the target to work with an
 
 When migrating subscriptions from another billing system, you can preserve the original renewal dates to avoid double-charging customers who already paid for their current period.
 
-**Enable preservation:** Set `billing_cycle_anchor_field` to the field containing the renewal date in your source data.
+**Enable preservation:** Set `subscriptions.source_fields.billing_cycle_anchor` to the column containing the renewal date in your source data.
 
 **Behavior:**
 - Subscriptions with future renewal dates are created with preserved billing cycles
-- Past-due subscriptions are handled based on `past_due_handling` (`skip` or `create_fresh`)
+- Past-due subscriptions are handled based on `subscriptions.past_due_handling` (`skip` or `create_fresh`)
 - Uses `proration_behavior: "none"` to prevent charges for already-paid periods
 - Sets `collection_method: "send_invoice"` for subscriptions without payment methods
 
 **Example:**
 ```json
 {
-  "source_fields": {
-    "billing_cycle_anchor_field": "current_period_ends_at",
-    "backdate_start_field": "current_period_started_at",
-    "proration_behavior": "none"
-  },
-  "past_due_handling": "skip"
+  "subscriptions": {
+    "source_fields": {
+      "billing_cycle_anchor": "current_period_ends_at",
+      "backdate_start": "current_period_started_at",
+      "proration_behavior": "none",
+      "subscription_id": "source_subscription_id",
+      "metadata": [["source_subscription_id", "source_subscription_id"]]
+    },
+    "past_due_handling": "skip"
+  }
 }
 ```
 
-**Omit billing_cycle_anchor_field** to create fresh billing cycles starting from migration date.
+**Omit `billing_cycle_anchor`** to create fresh billing cycles starting from migration date.
 
 ### Test Payment Methods
 
-When testing your integration with Stripe, you can automatically attach test payment methods to customers by enabling the `add_test_payment_methods` configuration option. This is only allowed in test mode for safety.
+When testing your integration with Stripe, you can automatically attach test payment methods to customers by enabling `customers.add_test_payment_methods`. This is only allowed in test mode for safety.
 
 **Benefits:**
 - Test subscriptions with realistic payment scenarios using `charge_automatically` collection method
@@ -190,7 +236,13 @@ When testing your integration with Stripe, you can automatically attach test pay
 {
   "stripe_api_key": "sk_test_YOUR_KEY",
   "stripe_mode": "test",
-  "add_test_payment_methods": true
+  "customers": {
+    "source_fields": {
+      "customer_id": "source_customer_id",
+      "metadata": [["source_customer_id", "source_customer_id"]]
+    },
+    "add_test_payment_methods": true
+  }
 }
 ```
 
@@ -217,7 +269,7 @@ Creates or updates Stripe Customers.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `source_customer_id` | string | Yes* | Source customer ID (configurable via `source_fields.customer_source_id_field`) |
+| `source_customer_id` | string | Yes* | Source customer ID (defaults; override via `customers.source_fields.customer_id`) |
 | `customer_id` | string | Yes* | Alternative source ID field |
 | `id` | string | Yes* | Alternative source ID field |
 | `email` | string | No | Customer email |
@@ -233,11 +285,10 @@ Creates or updates Stripe Customers.
 | `country` | string | No | Country code |
 | `metadata` | object | No | Additional metadata |
 
-*One of the source ID fields is required. The configured `customer_source_id_field` takes priority.
+*One of the source ID fields is required. The configured `customers.source_fields.customer_id` takes priority.
 
 **Stripe Metadata Set:**
-- Configured `customer_metadata_key` - Always set from source ID
-- Any fields listed in `additional_metadata_fields` - Copied if present in source
+- Pairs in `customers.source_fields.metadata`: each `[record_field, stripe_metadata_key]` copies from the record when present; the pair for `customer_id` receives the stamped source ID.
 
 ### subscriptions
 
@@ -247,25 +298,25 @@ Creates or updates Stripe Subscriptions.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `source_subscription_id` | string | Yes* | Source subscription ID (configurable via `source_fields.subscription_source_id_field`) |
+| `source_subscription_id` | string | Yes* | Source subscription ID (defaults; override via `subscriptions.source_fields.subscription_id`) |
 | `subscription_id` | string | Yes* | Alternative source ID field |
 | `id` | string | Yes* | Alternative source ID field |
-| `customer_id` | string | Yes | Customer reference (source or Stripe ID, configurable via `source_fields.subscription_customer_id_field`) |
+| `customer_id` | string | Yes | Customer reference (source or Stripe ID; configurable via `subscriptions.source_fields.subscription_customer_id`) |
 | `price_id` | string | Yes** | Stripe price ID |
 | `plan_code` | string | Yes** | Plan code (mapped to price_id) |
 | `quantity` | integer | No | Subscription quantity |
 | `trial_end` | string/int | No | Trial end timestamp or "now" |
 | `coupon` | string | No | Coupon code to apply |
-| `cancel_at_period_end` | boolean | No | Cancel at period end flag (configurable via `source_fields.cancel_at_period_end_field`) |
-| `current_period_ends_at` | string/int | No | Renewal date for billing cycle preservation (configurable via `source_fields.billing_cycle_anchor_field`) |
-| `current_period_started_at` | string/int | No | Period start date for billing cycle preservation (configurable via `source_fields.backdate_start_field`) |
+| `cancel_at_period_end` | boolean | No | Cancel at period end flag (column name from `subscriptions.source_fields.cancel_at_period_end`) |
+| `current_period_ends_at` | string/int | No | Renewal date for billing cycle preservation (`subscriptions.source_fields.billing_cycle_anchor`) |
+| `current_period_started_at` | string/int | No | Period start (`subscriptions.source_fields.backdate_start`) |
 | `metadata` | object | No | Additional metadata |
 
-*One of the source ID fields is required. The configured `subscription_source_id_field` takes priority.
+*One of the source ID fields is required. The configured `subscriptions.source_fields.subscription_id` takes priority.
 **Either `price_id` or `plan_code` is required.
 
 **Stripe Metadata Set:**
-- Configured `subscription_metadata_key` - Always set from source ID
+- Pairs in `subscriptions.source_fields.metadata` (including the `subscription_id` pair for the stamped source ID).
 
 ## Usage
 
@@ -312,10 +363,12 @@ plugins:
           kind: boolean
           value: false
           description: Fail on first error
-        - name: plan_code_to_price_id
+        - name: customers
           kind: object
-          value: {}
-          description: Plan code to Stripe price ID mapping
+          description: Customer stream config (source_fields + add_test_payment_methods)
+        - name: subscriptions
+          kind: object
+          description: Subscription stream config (source_fields, plan_code_to_price_id, default_currency, …)
         - name: rate_limit_per_sec
           kind: integer
           value: 25
@@ -471,11 +524,13 @@ Create a JSON file for plan code to price ID mappings:
 }
 ```
 
-Then reference it in config:
+Then reference it in config (merged into subscription pricing):
 
 ```json
 {
-  "plan_code_mapping_file": "/path/to/plan_codes.json"
+  "subscriptions": {
+    "plan_code_mapping_file": "/path/to/plan_codes.json"
+  }
 }
 ```
 
@@ -483,8 +538,10 @@ Or provide mappings directly:
 
 ```json
 {
-  "plan_code_to_price_id": {
-    "basic_monthly": "price_1ABC123"
+  "subscriptions": {
+    "plan_code_to_price_id": {
+      "basic_monthly": "price_1ABC123"
+    }
   }
 }
 ```

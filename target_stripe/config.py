@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class StripeMode(str, Enum):
@@ -40,66 +40,198 @@ class IdempotencyConfig(BaseModel):
     )
 
 
-class SourceFieldsConfig(BaseModel):
-    """Configuration for source system field names.
+def _coerce_metadata_pairs(v: Any) -> List[Tuple[str, str]]:
+    """Normalize metadata from JSON (list of two-element lists) to pairs."""
+    if v is None:
+        return []
+    if not isinstance(v, list):
+        raise TypeError("metadata must be a list of [record_field, stripe_metadata_key] pairs")
+    out: List[Tuple[str, str]] = []
+    for i, item in enumerate(v):
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            out.append((str(item[0]), str(item[1])))
+        else:
+            raise ValueError(
+                f"metadata[{i}] must be a two-element array [record_field, stripe_metadata_key]"
+            )
+    return out
 
-    This allows the plugin to work with any source system by configuring
-    the field names used for customer and subscription IDs, as well as
-    the metadata keys stored in Stripe.
-    """
 
-    customer_source_id_field: str = Field(
+class CustomerSourceFieldsConfig(BaseModel):
+    """Source column names and Stripe metadata mapping for customer records."""
+
+    customer_id: str = Field(
         default="source_customer_id",
-        description="Field name in source records containing the customer ID",
+        description="Top-level record field containing the source customer ID",
     )
-    customer_metadata_key: Optional[str] = Field(
-        default=None,
-        description="Metadata key used in Stripe to store the source customer ID. If not set, uses customer_source_id_field.",
+    metadata: List[Tuple[str, str]] = Field(
+        default_factory=lambda: [("source_customer_id", "source_customer_id")],
+        description="Pairs: source column name → Stripe metadata key",
     )
-    subscription_source_id_field: str = Field(
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _validate_metadata_input(cls, v: Any) -> Any:
+        return _coerce_metadata_pairs(v)
+
+    @model_validator(mode="after")
+    def _validate_metadata_pairs(self) -> CustomerSourceFieldsConfig:
+        seen: set[str] = set()
+        for rf, _ in self.metadata:
+            if rf in seen:
+                raise ValueError(f"Duplicate record_field in metadata: {rf!r}")
+            seen.add(rf)
+        matches = [p for p in self.metadata if p[0] == self.customer_id]
+        if len(matches) != 1:
+            raise ValueError(
+                "metadata must contain exactly one pair whose first element equals "
+                f"customer_id ({self.customer_id!r})"
+            )
+        return self
+
+    def stripe_metadata_key_for_source_id(self) -> str:
+        """Stripe metadata key where the canonical source customer ID is stored."""
+        for rf, sk in self.metadata:
+            if rf == self.customer_id:
+                return sk
+        raise RuntimeError("metadata/customer_id invariant violated")
+
+
+class SubscriptionSourceFieldsConfig(BaseModel):
+    """Source column names and Stripe metadata mapping for subscription records."""
+
+    subscription_id: str = Field(
         default="source_subscription_id",
-        description="Field name in source records containing the subscription ID",
+        description="Top-level record field containing the source subscription ID",
     )
-    subscription_metadata_key: Optional[str] = Field(
+    subscription_customer_id: Optional[str] = Field(
         default=None,
-        description="Metadata key used in Stripe to store the source subscription ID. If not set, uses subscription_source_id_field.",
+        description=(
+            "Record field referencing the customer (source id or Stripe id). "
+            "If unset, common fallbacks are used."
+        ),
     )
-    additional_metadata_fields: List[str] = Field(
-        default_factory=list,
-        description="Additional fields from source records to include in Stripe metadata",
-    )
-    subscription_customer_id_field: Optional[str] = Field(
-        default=None,
-        description="Field name in subscription records containing customer reference (e.g., 'chargify_customer_id'). If not set, uses fallback search.",
-    )
-    cancel_at_period_end_field: str = Field(
+    cancel_at_period_end: str = Field(
         default="cancel_at_period_end",
-        description="Field name containing cancel at period end flag",
+        description="Record field for cancel-at-period-end flag",
     )
-    billing_cycle_anchor_field: Optional[str] = Field(
+    billing_cycle_anchor: Optional[str] = Field(
         default=None,
-        description="Field name containing billing cycle anchor date (e.g., 'current_period_ends_at'). If set, preserves original renewal dates.",
+        description="Record field for billing cycle anchor / renewal date",
     )
-    backdate_start_field: Optional[str] = Field(
+    backdate_start: Optional[str] = Field(
         default=None,
-        description="Field name containing backdate start date (e.g., 'current_period_started_at'). Used with billing_cycle_anchor_field.",
+        description="Record field for period start / backdate start",
     )
     proration_behavior: str = Field(
         default="none",
-        description="Stripe proration behavior when using billing cycle fields: none, create_prorations, or always_invoice",
+        description="Stripe proration behavior for billing-cycle preservation",
+    )
+    metadata: List[Tuple[str, str]] = Field(
+        default_factory=lambda: [("source_subscription_id", "source_subscription_id")],
+        description="Pairs: source column name → Stripe metadata key",
     )
 
-    def get_customer_metadata_key(self) -> str:
-        """Get the metadata key for customers, with fallback to source_id_field."""
-        return self.customer_metadata_key or self.customer_source_id_field
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _validate_metadata_input(cls, v: Any) -> Any:
+        return _coerce_metadata_pairs(v)
 
-    def get_subscription_metadata_key(self) -> str:
-        """Get the metadata key for subscriptions, with fallback to source_id_field."""
-        return self.subscription_metadata_key or self.subscription_source_id_field
+    @model_validator(mode="after")
+    def _validate_metadata_pairs(self) -> SubscriptionSourceFieldsConfig:
+        seen: set[str] = set()
+        for rf, _ in self.metadata:
+            if rf in seen:
+                raise ValueError(f"Duplicate record_field in metadata: {rf!r}")
+            seen.add(rf)
+        matches = [p for p in self.metadata if p[0] == self.subscription_id]
+        if len(matches) != 1:
+            raise ValueError(
+                "metadata must contain exactly one pair whose first element equals "
+                f"subscription_id ({self.subscription_id!r})"
+            )
+        return self
+
+    def stripe_metadata_key_for_source_id(self) -> str:
+        """Stripe metadata key where the canonical source subscription ID is stored."""
+        for rf, sk in self.metadata:
+            if rf == self.subscription_id:
+                return sk
+        raise RuntimeError("metadata/subscription_id invariant violated")
+
+
+class CustomerBlockConfig(BaseModel):
+    """Customer stream settings."""
+
+    source_fields: CustomerSourceFieldsConfig = Field(
+        default_factory=CustomerSourceFieldsConfig,
+    )
+    add_test_payment_methods: bool = Field(
+        default=False,
+        description="Attach test payment methods to customers (test mode only)",
+    )
+
+
+class SubscriptionBlockConfig(BaseModel):
+    """Subscription stream settings."""
+
+    source_fields: SubscriptionSourceFieldsConfig = Field(
+        default_factory=SubscriptionSourceFieldsConfig,
+    )
+    plan_code_to_price_id: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Plan code → Stripe price ID",
+    )
+    plan_code_mapping_file: Optional[str] = Field(
+        default=None,
+        description="Path to JSON/YAML file with plan code mappings",
+    )
+    default_currency: str = Field(
+        default="usd",
+        description="Default currency for subscriptions (ISO 4217)",
+    )
+    past_due_handling: PastDueHandling = Field(
+        default=PastDueHandling.SKIP,
+        description="Handling when billing_cycle_anchor is in the past",
+    )
+
+    @field_validator("default_currency")
+    @classmethod
+    def validate_currency(cls, v: str) -> str:
+        return v.lower()
+
+    @model_validator(mode="after")
+    def load_plan_code_mapping(self) -> SubscriptionBlockConfig:
+        """Merge plan code mapping from file if specified."""
+        if self.plan_code_mapping_file:
+            path = Path(self.plan_code_mapping_file)
+            if path.exists():
+                content = path.read_text()
+                if path.suffix in (".yaml", ".yml"):
+                    try:
+                        import yaml
+
+                        file_mapping = yaml.safe_load(content)
+                    except ImportError as e:
+                        raise ValueError(
+                            "PyYAML is required to load YAML mapping files. "
+                            "Install with: pip install pyyaml"
+                        ) from e
+                else:
+                    file_mapping = json.loads(content)
+
+                if isinstance(file_mapping, dict):
+                    self.plan_code_to_price_id = {
+                        **file_mapping,
+                        **self.plan_code_to_price_id,
+                    }
+        return self
 
 
 class TargetStripeConfig(BaseModel):
     """Configuration schema for target-stripe."""
+
+    model_config = ConfigDict(extra="forbid")
 
     stripe_api_key: str = Field(
         ...,
@@ -108,10 +240,6 @@ class TargetStripeConfig(BaseModel):
     stripe_mode: StripeMode = Field(
         default=StripeMode.TEST,
         description="Stripe mode: test or live",
-    )
-    default_currency: str = Field(
-        default="usd",
-        description="Default currency for subscriptions (ISO 4217 code)",
     )
     dry_run: bool = Field(
         default=False,
@@ -125,17 +253,13 @@ class TargetStripeConfig(BaseModel):
         default_factory=IdempotencyConfig,
         description="Idempotency configuration",
     )
-    source_fields: SourceFieldsConfig = Field(
-        default_factory=SourceFieldsConfig,
-        description="Configuration for source system field names",
+    customers: CustomerBlockConfig = Field(
+        default_factory=CustomerBlockConfig,
+        description="Customer stream configuration",
     )
-    plan_code_to_price_id: Dict[str, str] = Field(
-        default_factory=dict,
-        description="Mapping of plan codes to Stripe price IDs",
-    )
-    plan_code_mapping_file: Optional[str] = Field(
-        default=None,
-        description="Path to JSON/YAML file containing plan code to price ID mapping",
+    subscriptions: SubscriptionBlockConfig = Field(
+        default_factory=SubscriptionBlockConfig,
+        description="Subscription stream configuration",
     )
     state_emit_interval: int = Field(
         default=100,
@@ -170,10 +294,6 @@ class TargetStripeConfig(BaseModel):
         le=5.0,
         description="Base for exponential backoff (seconds)",
     )
-    past_due_handling: PastDueHandling = Field(
-        default=PastDueHandling.SKIP,
-        description="How to handle subscriptions with billing_cycle_anchor in the past: skip or create_fresh",
-    )
     skip_existence_check: bool = Field(
         default=False,
         description="If true, skip metadata search for existing records (useful for initial migrations). Uses only local mapping DB.",
@@ -181,10 +301,6 @@ class TargetStripeConfig(BaseModel):
     skip_already_migrated: bool = Field(
         default=False,
         description="If true, skip records that are already in the local mapping database. Useful for resuming migrations or running pipeline continuously.",
-    )
-    add_test_payment_methods: bool = Field(
-        default=False,
-        description="If true, attach test payment methods to customers (only allowed in test mode). Sets collection_method='charge_automatically' for subscriptions.",
     )
 
     @field_validator("stripe_api_key")
@@ -197,12 +313,6 @@ class TargetStripeConfig(BaseModel):
                 "rk_test_, or rk_live_"
             )
         return v
-
-    @field_validator("default_currency")
-    @classmethod
-    def validate_currency(cls, v: str) -> str:
-        """Normalize currency code to lowercase."""
-        return v.lower()
 
     @model_validator(mode="after")
     def validate_mode_matches_key(self) -> TargetStripeConfig:
@@ -220,39 +330,21 @@ class TargetStripeConfig(BaseModel):
     @model_validator(mode="after")
     def validate_test_payment_methods(self) -> TargetStripeConfig:
         """Validate that test payment methods are only enabled in test mode."""
-        if self.add_test_payment_methods and self.stripe_mode != StripeMode.TEST:
+        if self.customers.add_test_payment_methods and self.stripe_mode != StripeMode.TEST:
             raise ValueError(
                 "add_test_payment_methods can only be enabled in test mode (stripe_mode='test')"
             )
 
         return self
 
-    @model_validator(mode="after")
-    def load_plan_code_mapping(self) -> TargetStripeConfig:
-        """Load plan code mapping from file if specified."""
-        if self.plan_code_mapping_file:
-            path = Path(self.plan_code_mapping_file)
-            if path.exists():
-                content = path.read_text()
-                if path.suffix in (".yaml", ".yml"):
-                    try:
-                        import yaml
 
-                        file_mapping = yaml.safe_load(content)
-                    except ImportError as e:
-                        raise ValueError(
-                            "PyYAML is required to load YAML mapping files. "
-                            "Install with: pip install pyyaml"
-                        ) from e
-                else:
-                    file_mapping = json.loads(content)
-
-                if isinstance(file_mapping, dict):
-                    self.plan_code_to_price_id = {
-                        **file_mapping,
-                        **self.plan_code_to_price_id,
-                    }
-        return self
+# Keys injected by singer-sdk Target / Meltano that are not part of our schema.
+_STRIP_BEFORE_VALIDATE = frozenset(
+    {
+        "load_method",
+        "validate_records",
+    }
+)
 
 
 def parse_config(raw_config: Dict[str, Any]) -> TargetStripeConfig:
@@ -267,13 +359,13 @@ def parse_config(raw_config: Dict[str, Any]) -> TargetStripeConfig:
     Raises:
         ValueError: If configuration is invalid.
     """
-    if "idempotency" in raw_config and isinstance(raw_config["idempotency"], dict):
+    raw = dict(raw_config)
+    for k in _STRIP_BEFORE_VALIDATE:
+        raw.pop(k, None)
+
+    if "idempotency" in raw and isinstance(raw["idempotency"], dict):
         pass
-    elif "idempotency" in raw_config and isinstance(raw_config["idempotency"], str):
-        raw_config["idempotency"] = {"strategy": raw_config["idempotency"]}
+    elif "idempotency" in raw and isinstance(raw["idempotency"], str):
+        raw["idempotency"] = {"strategy": raw["idempotency"]}
 
-    # Ensure source_fields is a dict if provided
-    if "source_fields" in raw_config and not isinstance(raw_config["source_fields"], dict):
-        raw_config["source_fields"] = {}
-
-    return TargetStripeConfig(**raw_config)
+    return TargetStripeConfig(**raw)
