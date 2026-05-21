@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "target-stripe"
-version = "0.1.1"
+version = "0.1.2"
 description = "Singer target for Stripe - upserts Customers and Subscriptions via Stripe API"
 readme = "README.md"
 license = "MIT"
