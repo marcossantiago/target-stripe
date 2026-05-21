@@ -83,7 +83,7 @@ class TestStripeClientWrapper:
         parsed_config.dry_run = True
         client = StripeClientWrapper(parsed_config, mapping_store)
 
-        stripe_id, was_created = client.upsert_customer(
+        stripe_id, was_created, was_updated = client.upsert_customer(
             source_id="12345",
             data={
                 "email": "test@example.com",
@@ -93,6 +93,7 @@ class TestStripeClientWrapper:
 
         assert stripe_id.startswith("dry_run_cus_")
         assert was_created is True
+        assert was_updated is False
         mock_stripe.Customer.create.assert_not_called()
 
     def test_upsert_customer_create(
@@ -105,7 +106,7 @@ class TestStripeClientWrapper:
         mock_stripe.Customer.search.return_value = MagicMock(data=[])
         mock_stripe.Customer.create.return_value = mock_stripe_customer
 
-        stripe_id, was_created = stripe_client.upsert_customer(
+        stripe_id, was_created, was_updated = stripe_client.upsert_customer(
             source_id="12345",
             data={
                 "email": "test@example.com",
@@ -115,22 +116,26 @@ class TestStripeClientWrapper:
 
         assert stripe_id == "cus_test123"
         assert was_created is True
+        assert was_updated is False
         assert stripe_client.stats["customers_created"] == 1
         mock_stripe.Customer.create.assert_called_once()
 
     def test_upsert_customer_update_existing(
         self,
-        stripe_client: StripeClientWrapper,
+        parsed_config: TargetStripeConfig,
         mapping_store: MappingStore,
         mock_stripe: MagicMock,
         mock_stripe_customer: MagicMock,
     ) -> None:
-        """Test updating an existing customer."""
+        """Test updating an existing customer when update_existing is enabled."""
+        parsed_config.customers.update_existing = True
+        client = StripeClientWrapper(parsed_config, mapping_store)
         mapping_store.set_mapping(EntityType.CUSTOMER, "12345", "cus_existing")
+        mock_stripe.Customer.retrieve.return_value = mock_stripe_customer
         mock_stripe.Customer.modify.return_value = mock_stripe_customer
         mock_stripe_customer.id = "cus_existing"
 
-        stripe_id, was_created = stripe_client.upsert_customer(
+        stripe_id, was_created, was_updated = client.upsert_customer(
             source_id="12345",
             data={
                 "email": "updated@example.com",
@@ -140,8 +145,35 @@ class TestStripeClientWrapper:
 
         assert stripe_id == "cus_existing"
         assert was_created is False
-        assert stripe_client.stats["customers_updated"] == 1
+        assert was_updated is True
+        assert client.stats["customers_updated"] == 1
         mock_stripe.Customer.modify.assert_called_once()
+
+    def test_upsert_customer_link_existing_without_update(
+        self,
+        stripe_client: StripeClientWrapper,
+        mapping_store: MappingStore,
+        mock_stripe: MagicMock,
+        mock_stripe_customer: MagicMock,
+    ) -> None:
+        """Test linking an existing customer without Customer.modify (default)."""
+        mapping_store.set_mapping(EntityType.CUSTOMER, "12345", "cus_existing")
+        mock_stripe.Customer.retrieve.return_value = mock_stripe_customer
+        mock_stripe_customer.id = "cus_existing"
+
+        stripe_id, was_created, was_updated = stripe_client.upsert_customer(
+            source_id="12345",
+            data={
+                "email": "updated@example.com",
+                "name": "Updated User",
+            },
+        )
+
+        assert stripe_id == "cus_existing"
+        assert was_created is False
+        assert was_updated is False
+        assert stripe_client.stats["customers_updated"] == 0
+        mock_stripe.Customer.modify.assert_not_called()
 
     def test_upsert_customer_check_existing_disabled(
         self,
@@ -156,7 +188,7 @@ class TestStripeClientWrapper:
 
         mock_stripe.Customer.create.return_value = mock_stripe_customer
 
-        stripe_id, was_created = client.upsert_customer(
+        stripe_id, was_created, was_updated = client.upsert_customer(
             source_id="12345",
             data={
                 "email": "test@example.com",
@@ -166,6 +198,7 @@ class TestStripeClientWrapper:
 
         assert stripe_id == "cus_test123"
         assert was_created is True
+        assert was_updated is False
         mock_stripe.Customer.list.assert_not_called()
         mock_stripe.Customer.create.assert_called_once()
 
@@ -509,7 +542,7 @@ class TestPaymentMethods:
         mock_payment_method.id = "pm_card_visa"
         mock_stripe.PaymentMethod.attach.return_value = mock_payment_method
 
-        stripe_id, was_created = client.upsert_customer(
+        stripe_id, was_created, was_updated = client.upsert_customer(
             source_id="12345",
             data={
                 "email": "test@example.com",
@@ -519,6 +552,7 @@ class TestPaymentMethods:
 
         assert stripe_id == "cus_test123"
         assert was_created is True
+        assert was_updated is False
         # Payment method should be attached
         mock_stripe.PaymentMethod.attach.assert_called_once()
 

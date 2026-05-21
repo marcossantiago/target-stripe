@@ -273,7 +273,7 @@ class StripeClientWrapper:
         self,
         source_id: str,
         data: dict[str, Any],
-    ) -> tuple[str, bool]:
+    ) -> tuple[str, bool, bool]:
         """Create or update a Stripe customer.
 
         Args:
@@ -281,7 +281,7 @@ class StripeClientWrapper:
             data: Customer data including email, name, phone, address, metadata.
 
         Returns:
-            Tuple of (stripe_customer_id, was_created).
+            Tuple of (stripe_customer_id, was_created, was_updated).
 
         Raises:
             StripeError: If the operation fails.
@@ -309,19 +309,43 @@ class StripeClientWrapper:
 
         if self.dry_run:
             existing_stripe_id = self.mapping_store.get_stripe_id(EntityType.CUSTOMER, source_id)
+            if existing_stripe_id:
+                action = "update" if self.config.customers.update_existing else "skip"
+                logger.info(
+                    "[DRY RUN] Would %s customer: source_id=%s, stripe_id=%s, data=%s",
+                    action,
+                    source_id,
+                    existing_stripe_id,
+                    customer_data,
+                )
+                return (
+                    existing_stripe_id,
+                    False,
+                    self.config.customers.update_existing,
+                )
             logger.info(
-                "[DRY RUN] Would %s customer: source_id=%s, data=%s",
-                "update" if existing_stripe_id else "create",
+                "[DRY RUN] Would create customer: source_id=%s, data=%s",
                 source_id,
                 customer_data,
             )
-            return existing_stripe_id or f"dry_run_cus_{source_id}", not existing_stripe_id
+            return f"dry_run_cus_{source_id}", True, False
 
         # Try to find existing customer (checks local DB first, then optionally searches by email)
         existing_customer = self.find_existing_customer(source_id, data.get("email"))
 
         if existing_customer:
-            # Update existing customer
+            self.mapping_store.set_mapping(
+                EntityType.CUSTOMER, source_id, existing_customer.id
+            )
+            if not self.config.customers.update_existing:
+                logger.debug(
+                    "Skipped update for existing customer (link only): "
+                    "source_id=%s, stripe_id=%s",
+                    source_id,
+                    existing_customer.id,
+                )
+                return existing_customer.id, False, False
+
             idempotency_key = generate_idempotency_key(
                 EntityType.CUSTOMER,
                 source_id,
@@ -344,7 +368,7 @@ class StripeClientWrapper:
                     source_id,
                     customer.id,
                 )
-                return customer.id, False
+                return customer.id, False, True
             except stripe.IdempotencyError:
                 # Idempotency key was already used - likely a re-run within 24h
                 # Return the existing mapping as success
@@ -355,7 +379,7 @@ class StripeClientWrapper:
                     existing_customer.id,
                 )
                 self._stats["customers_updated"] += 1
-                return existing_customer.id, False
+                return existing_customer.id, False, True
             except stripe.InvalidRequestError as e:
                 self._stats["errors"] += 1
                 raise StripePermanentError(
@@ -401,7 +425,7 @@ class StripeClientWrapper:
                     # Don't fail the whole operation if payment method attachment fails
                     # The customer is still created successfully
 
-            return customer.id, True
+            return customer.id, True, False
         except stripe.IdempotencyError as e:
             # Idempotency key was already used for a create operation
             # Try to find the customer that was created
@@ -412,8 +436,13 @@ class StripeClientWrapper:
             )
             existing_customer = self.find_existing_customer(source_id, data.get("email"))
             if existing_customer:
-                self._stats["customers_created"] += 1
-                return existing_customer.id, True
+                self.mapping_store.set_mapping(
+                    EntityType.CUSTOMER, source_id, existing_customer.id
+                )
+                if self.config.customers.update_existing:
+                    self._stats["customers_created"] += 1
+                    return existing_customer.id, True, False
+                return existing_customer.id, False, False
             else:
                 # Could not find the customer - re-raise the error
                 self._stats["errors"] += 1

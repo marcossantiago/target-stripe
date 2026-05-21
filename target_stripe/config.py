@@ -184,6 +184,14 @@ class CustomerBlockConfig(BaseModel):
             "mapping database."
         ),
     )
+    update_existing: bool = Field(
+        default=False,
+        description=(
+            "If true, call Customer.modify when an existing customer is found "
+            "(local mapping or email lookup). If false, only link source_id to "
+            "stripe_id without updating Stripe fields."
+        ),
+    )
 
 
 class SubscriptionBlockConfig(BaseModel):

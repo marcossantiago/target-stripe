@@ -15,7 +15,8 @@
     },
     "add_test_payment_methods": false,
     "check_existing": true,
-    "skip_mapped_records": false
+    "skip_mapped_records": false,
+    "update_existing": false
   },
   "subscriptions": {
     "source_fields": {

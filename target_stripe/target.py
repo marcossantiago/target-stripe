@@ -111,6 +111,14 @@ class TargetStripe(Target):
                     default=False,
                     description="Skip customer records already in the local mapping database",
                 ),
+                th.Property(
+                    "update_existing",
+                    th.BooleanType,
+                    default=False,
+                    description=(
+                        "Update Stripe customer when found; if false, link mapping only"
+                    ),
+                ),
             ),
             description="Customer stream configuration",
         ),

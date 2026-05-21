@@ -211,7 +211,7 @@ class CustomerSink(StripeBaseSink):
 
                 customer_data = self._transform_record(record)
 
-                stripe_id, was_created = self.stripe_client.upsert_customer(
+                stripe_id, was_created, was_updated = self.stripe_client.upsert_customer(
                     source_id=source_id,
                     data=customer_data,
                 )
@@ -219,8 +219,10 @@ class CustomerSink(StripeBaseSink):
                 context["processed"] += 1
                 if was_created:
                     context["created"] += 1
-                else:
+                elif was_updated:
                     context["updated"] += 1
+                else:
+                    context["skipped"] += 1
 
                 self._records_processed += 1
 

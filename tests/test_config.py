@@ -278,6 +278,11 @@ class TestTestPaymentMethods:
         assert config.customers.skip_mapped_records is False
         assert config.subscriptions.skip_mapped_records is False
 
+    def test_update_existing_defaults_to_false(self, base_config: dict) -> None:
+        """Test that customers.update_existing defaults to False."""
+        config = parse_config(base_config)
+        assert config.customers.update_existing is False
+
 
 class TestParseConfig:
     """Tests for parse_config function."""

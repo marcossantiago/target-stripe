@@ -52,6 +52,7 @@ pip install -e .
 | `customers.add_test_payment_methods` | boolean | `false` | Attach test payment methods (test mode only) |
 | `customers.check_existing` | boolean | `true` | Search Stripe for existing customer by email when no local mapping |
 | `customers.skip_mapped_records` | boolean | `false` | Skip customer rows already in local mapping DB |
+| `customers.update_existing` | boolean | `false` | Update Stripe when customer found; if false, link only (counts as `skipped`) |
 | `subscriptions.source_fields.subscription_id` | string | `source_subscription_id` | Column for subscription source ID |
 | `subscriptions.source_fields.subscription_customer_id` | string | `null` | Column linking subscription row to customer |
 | `subscriptions.source_fields.cancel_at_period_end` | string | `cancel_at_period_end` | Column for cancel-at-period-end flag |
@@ -91,7 +92,8 @@ pip install -e .
     },
     "add_test_payment_methods": false,
     "check_existing": true,
-    "skip_mapped_records": false
+    "skip_mapped_records": false,
+    "update_existing": false
   },
   "subscriptions": {
     "source_fields": {
@@ -440,6 +442,11 @@ Customers are deduplicated using:
 - If record exists in local DB → retrieve directly by Stripe ID
 - Otherwise, search Stripe by email address when `customers.check_existing` is true (default)
 - Email search helps find customers when starting with existing Stripe account
+
+**When a customer is found** (`customers.update_existing`, default `false`):
+- Store or refresh the local mapping only; no `Customer.modify`
+- Batch stats count the row as **skipped** (not updated)
+- Set `customers.update_existing: true` to push record fields to Stripe (previous default upsert behavior)
 
 **Performance optimization:** Set `customers.check_existing=false` to skip email searches and only use local mapping DB. This reduces API calls by ~50% when you know records don't exist in Stripe yet.
 

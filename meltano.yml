@@ -81,9 +81,10 @@ plugins:
             add_test_payment_methods: false
             check_existing: true
             skip_mapped_records: false
+            update_existing: false
           description: >
             Customer loader settings: source_fields, add_test_payment_methods,
-            check_existing (Stripe email lookup), skip_mapped_records.
+            check_existing, skip_mapped_records, update_existing.
 
         # Subscription stream (fields, pricing, currency)
         - name: subscriptions
