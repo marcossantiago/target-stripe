@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -340,8 +341,10 @@ class CustomerSink(StripeBaseSink):
         if "address" in record and isinstance(record["address"], dict):
             return record["address"]
 
-        if "billing_address" in record and isinstance(record["billing_address"], dict):
-            ba = record["billing_address"]
+        raw_ba = record.get("billing_address")
+        if raw_ba:
+            ba = json.loads(raw_ba) if isinstance(raw_ba, str) else raw_ba
+        if raw_ba and isinstance(ba, dict):
             braintree_mapping = {
                 "street_address": "line1",
                 "extended_address": "line2",
