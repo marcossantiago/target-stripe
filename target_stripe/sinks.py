@@ -340,6 +340,22 @@ class CustomerSink(StripeBaseSink):
         if "address" in record and isinstance(record["address"], dict):
             return record["address"]
 
+        if "billing_address" in record and isinstance(record["billing_address"], dict):
+            ba = record["billing_address"]
+            braintree_mapping = {
+                "street_address": "line1",
+                "extended_address": "line2",
+                "locality": "city",
+                "region": "state",
+                "postal_code": "postal_code",
+                "country_code_alpha2": "country",
+            }
+            address: dict[str, str] = {}
+            for src, tgt in braintree_mapping.items():
+                if ba.get(src):
+                    address[tgt] = str(ba[src])
+            return address if address else None
+
         address: dict[str, str] = {}
         address_mapping = {
             "address_line1": "line1",
