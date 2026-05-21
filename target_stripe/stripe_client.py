@@ -334,13 +334,10 @@ class StripeClientWrapper:
         existing_customer = self.find_existing_customer(source_id, data.get("email"))
 
         if existing_customer:
-            self.mapping_store.set_mapping(
-                EntityType.CUSTOMER, source_id, existing_customer.id
-            )
+            self.mapping_store.set_mapping(EntityType.CUSTOMER, source_id, existing_customer.id)
             if not self.config.customers.update_existing:
                 logger.debug(
-                    "Skipped update for existing customer (link only): "
-                    "source_id=%s, stripe_id=%s",
+                    "Skipped update for existing customer (link only): source_id=%s, stripe_id=%s",
                     source_id,
                     existing_customer.id,
                 )
@@ -436,9 +433,7 @@ class StripeClientWrapper:
             )
             existing_customer = self.find_existing_customer(source_id, data.get("email"))
             if existing_customer:
-                self.mapping_store.set_mapping(
-                    EntityType.CUSTOMER, source_id, existing_customer.id
-                )
+                self.mapping_store.set_mapping(EntityType.CUSTOMER, source_id, existing_customer.id)
                 if self.config.customers.update_existing:
                     self._stats["customers_created"] += 1
                     return existing_customer.id, True, False

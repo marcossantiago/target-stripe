@@ -115,9 +115,7 @@ class TargetStripe(Target):
                     "update_existing",
                     th.BooleanType,
                     default=False,
-                    description=(
-                        "Update Stripe customer when found; if false, link mapping only"
-                    ),
+                    description=("Update Stripe customer when found; if false, link mapping only"),
                 ),
             ),
             description="Customer stream configuration",
@@ -195,9 +193,7 @@ class TargetStripe(Target):
                     "skip_mapped_records",
                     th.BooleanType,
                     default=False,
-                    description=(
-                        "Skip subscription records already in the local mapping database"
-                    ),
+                    description=("Skip subscription records already in the local mapping database"),
                 ),
             ),
             description="Subscription stream configuration",

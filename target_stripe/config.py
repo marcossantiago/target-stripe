@@ -180,8 +180,7 @@ class CustomerBlockConfig(BaseModel):
     skip_mapped_records: bool = Field(
         default=False,
         description=(
-            "If true, skip customer records that already have a row in the local "
-            "mapping database."
+            "If true, skip customer records that already have a row in the local mapping database."
         ),
     )
     update_existing: bool = Field(

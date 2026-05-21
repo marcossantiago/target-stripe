@@ -96,7 +96,9 @@ class TestTargetStripeConfig:
 
         config = parse_config(base_config)
         assert config.subscriptions.plan_code_to_price_id["basic"] == "price_from_file_basic"
-        assert config.subscriptions.plan_code_to_price_id["enterprise"] == "price_from_file_enterprise"
+        assert (
+            config.subscriptions.plan_code_to_price_id["enterprise"] == "price_from_file_enterprise"
+        )
 
     def test_rate_limit_bounds(self, base_config: dict) -> None:
         """Test rate limit bounds validation."""
@@ -169,7 +171,9 @@ class TestTargetStripeConfig:
         config = parse_config(base_config)
         assert config.customers.source_fields.customer_id == "my_customer_id"
         assert config.customers.source_fields.metadata == [("my_customer_id", "my_customer_id")]
-        assert config.customers.source_fields.stripe_metadata_key_for_source_id() == "my_customer_id"
+        assert (
+            config.customers.source_fields.stripe_metadata_key_for_source_id() == "my_customer_id"
+        )
 
     def test_rejects_legacy_flat_source_fields(self, base_config: dict) -> None:
         """Unknown top-level keys (e.g. legacy layout) are rejected."""
