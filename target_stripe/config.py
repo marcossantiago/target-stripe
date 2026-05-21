@@ -170,6 +170,20 @@ class CustomerBlockConfig(BaseModel):
         default=False,
         description="Attach test payment methods to customers (test mode only)",
     )
+    check_existing: bool = Field(
+        default=True,
+        description=(
+            "If true, search Stripe for an existing customer by email when no local "
+            "mapping exists (Customer.list)."
+        ),
+    )
+    skip_mapped_records: bool = Field(
+        default=False,
+        description=(
+            "If true, skip customer records that already have a row in the local "
+            "mapping database."
+        ),
+    )
 
 
 class SubscriptionBlockConfig(BaseModel):
@@ -193,6 +207,13 @@ class SubscriptionBlockConfig(BaseModel):
     past_due_handling: PastDueHandling = Field(
         default=PastDueHandling.SKIP,
         description="Handling when billing_cycle_anchor is in the past",
+    )
+    skip_mapped_records: bool = Field(
+        default=False,
+        description=(
+            "If true, skip subscription records that already have a row in the local "
+            "mapping database."
+        ),
     )
 
     @field_validator("default_currency")
@@ -293,14 +314,6 @@ class TargetStripeConfig(BaseModel):
         ge=1.0,
         le=5.0,
         description="Base for exponential backoff (seconds)",
-    )
-    skip_existence_check: bool = Field(
-        default=False,
-        description="If true, skip metadata search for existing records (useful for initial migrations). Uses only local mapping DB.",
-    )
-    skip_already_migrated: bool = Field(
-        default=False,
-        description="If true, skip records that are already in the local mapping database. Useful for resuming migrations or running pipeline continuously.",
     )
 
     @field_validator("stripe_api_key")

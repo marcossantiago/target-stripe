@@ -50,6 +50,8 @@ pip install -e .
 | `customers.source_fields.customer_id` | string | `source_customer_id` | Top-level record column for customer source ID |
 | `customers.source_fields.metadata` | array | see sample | List of `[record_field, stripe_metadata_key]` pairs (must include one pair for `customer_id`) |
 | `customers.add_test_payment_methods` | boolean | `false` | Attach test payment methods (test mode only) |
+| `customers.check_existing` | boolean | `true` | Search Stripe for existing customer by email when no local mapping |
+| `customers.skip_mapped_records` | boolean | `false` | Skip customer rows already in local mapping DB |
 | `subscriptions.source_fields.subscription_id` | string | `source_subscription_id` | Column for subscription source ID |
 | `subscriptions.source_fields.subscription_customer_id` | string | `null` | Column linking subscription row to customer |
 | `subscriptions.source_fields.cancel_at_period_end` | string | `cancel_at_period_end` | Column for cancel-at-period-end flag |
@@ -61,8 +63,7 @@ pip install -e .
 | `subscriptions.plan_code_mapping_file` | string | `null` | File merged into `plan_code_to_price_id` |
 | `subscriptions.default_currency` | string | `usd` | Default currency (ISO 4217) |
 | `subscriptions.past_due_handling` | string | `skip` | `skip` or `create_fresh` when anchor is in the past |
-| `skip_existence_check` | boolean | `false` | Skip email search for existing customers |
-| `skip_already_migrated` | boolean | `false` | Skip rows already in local mapping DB |
+| `subscriptions.skip_mapped_records` | boolean | `false` | Skip subscription rows already in local mapping DB |
 | `state_emit_interval` | integer | `100` | Records between STATE emissions |
 | `rate_limit_per_sec` | number | `25.0` | Max Stripe API requests per second |
 | `mapping_db_path` | string | `.target-stripe-mapping.db` | Path to SQLite mapping database |
@@ -88,7 +89,9 @@ pip install -e .
         ["source_customer_id", "source_customer_id"]
       ]
     },
-    "add_test_payment_methods": false
+    "add_test_payment_methods": false,
+    "check_existing": true,
+    "skip_mapped_records": false
   },
   "subscriptions": {
     "source_fields": {
@@ -103,7 +106,8 @@ pip install -e .
       "enterprise_annual": "price_abcdefghij"
     },
     "default_currency": "usd",
-    "past_due_handling": "skip"
+    "past_due_handling": "skip",
+    "skip_mapped_records": false
   },
   "rate_limit_per_sec": 25,
   "state_emit_interval": 100
@@ -125,7 +129,8 @@ Under `customers.source_fields` and `subscriptions.source_fields`, set **`custom
         ["chargify_customer_id", "chargify_customer_id"],
         ["chargify_customer_ref", "chargify_customer_ref"]
       ]
-    }
+    },
+    "check_existing": false
   },
   "subscriptions": {
     "source_fields": {
@@ -140,9 +145,7 @@ Under `customers.source_fields` and `subscriptions.source_fields`, set **`custom
       ]
     },
     "past_due_handling": "skip"
-  },
-  "skip_existence_check": true,
-  "skip_already_migrated": false
+  }
 }
 ```
 
@@ -154,16 +157,17 @@ Under `customers.source_fields` and `subscriptions.source_fields`, set **`custom
     "source_fields": {
       "customer_id": "chargify_customer_id",
       "metadata": [["chargify_customer_id", "chargify_customer_id"]]
-    }
+    },
+    "check_existing": false,
+    "skip_mapped_records": true
   },
   "subscriptions": {
     "source_fields": {
       "subscription_id": "chargify_subscription_id",
       "metadata": [["chargify_subscription_id", "chargify_subscription_id"]]
-    }
-  },
-  "skip_existence_check": true,
-  "skip_already_migrated": true
+    },
+    "skip_mapped_records": true
+  }
 }
 ```
 
@@ -430,28 +434,31 @@ If a subscription references a customer that doesn't exist:
 Customers are deduplicated using:
 1. **Local SQLite mapping** (source_id → stripe_id) - checked first
 2. **Stripe ID lookup** - Direct retrieval if mapping exists
-3. **Email search** (fallback if no mapping and `skip_existence_check=false`)
+3. **Email search** (fallback if no mapping and `customers.check_existing=true`)
 
 **Finding existing customers strategy:**
 - If record exists in local DB → retrieve directly by Stripe ID
-- Otherwise, search Stripe by email address (unless `skip_existence_check=true`)
+- Otherwise, search Stripe by email address when `customers.check_existing` is true (default)
 - Email search helps find customers when starting with existing Stripe account
 
-**Performance optimization:** Set `skip_existence_check=true` to skip email searches and only use local mapping DB. This reduces API calls by ~50% when you know records don't exist in Stripe yet.
+**Performance optimization:** Set `customers.check_existing=false` to skip email searches and only use local mapping DB. This reduces API calls by ~50% when you know records don't exist in Stripe yet.
 
 ### Handling Re-Runs and Continuous Pipelines
 
-The target supports safe re-runs and continuous pipeline execution with the `skip_already_migrated` option:
+The target supports safe re-runs and continuous pipeline execution with per-stream `skip_mapped_records`:
 
 ```yaml
 # Recommended configuration for re-runs
 target-stripe:
   config:
-    skip_already_migrated: true    # Skip records in local DB
-    skip_existence_check: true     # Don't search Stripe by email
+    customers:
+      check_existing: false
+      skip_mapped_records: true
+    subscriptions:
+      skip_mapped_records: true
 ```
 
-**When `skip_already_migrated: true`:**
+**When `skip_mapped_records` is true for a stream:**
 - Records already in local mapping DB are skipped (no API calls)
 - Only new/unmigrated records are processed
 - Perfect for:

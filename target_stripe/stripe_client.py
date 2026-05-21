@@ -246,7 +246,7 @@ class StripeClientWrapper:
                 raise
 
         # Step 2: No local mapping - search by email if available
-        if email and not self.config.skip_existence_check:
+        if email and self.config.customers.check_existing:
             try:
                 customers = self._execute_with_retry(
                     stripe.Customer.list,

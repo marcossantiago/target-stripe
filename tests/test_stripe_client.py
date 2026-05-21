@@ -143,15 +143,15 @@ class TestStripeClientWrapper:
         assert stripe_client.stats["customers_updated"] == 1
         mock_stripe.Customer.modify.assert_called_once()
 
-    def test_upsert_customer_skip_existence_check(
+    def test_upsert_customer_check_existing_disabled(
         self,
         parsed_config: TargetStripeConfig,
         mapping_store: MappingStore,
         mock_stripe: MagicMock,
         mock_stripe_customer: MagicMock,
     ) -> None:
-        """Test that skip_existence_check skips metadata search."""
-        parsed_config.skip_existence_check = True
+        """Test that check_existing=false skips Stripe email lookup."""
+        parsed_config.customers.check_existing = False
         client = StripeClientWrapper(parsed_config, mapping_store)
 
         mock_stripe.Customer.create.return_value = mock_stripe_customer
@@ -164,10 +164,9 @@ class TestStripeClientWrapper:
             },
         )
 
-        # Should create without searching metadata
         assert stripe_id == "cus_test123"
         assert was_created is True
-        mock_stripe.Customer.search.assert_not_called()
+        mock_stripe.Customer.list.assert_not_called()
         mock_stripe.Customer.create.assert_called_once()
 
     def test_resolve_customer_id_stripe_format(

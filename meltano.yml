@@ -79,9 +79,11 @@ plugins:
               metadata:
                 - [source_customer_id, source_customer_id]
             add_test_payment_methods: false
+            check_existing: true
+            skip_mapped_records: false
           description: >
-            Customer loader settings: source_fields.customer_id and metadata pairs
-            [record_column, stripe_metadata_key]; add_test_payment_methods for test mode.
+            Customer loader settings: source_fields, add_test_payment_methods,
+            check_existing (Stripe email lookup), skip_mapped_records.
 
         # Subscription stream (fields, pricing, currency)
         - name: subscriptions
@@ -97,9 +99,10 @@ plugins:
             plan_code_to_price_id: {}
             default_currency: usd
             past_due_handling: skip
+            skip_mapped_records: false
           description: >
             Subscription loader settings, plan_code_to_price_id mapping,
-            default_currency, past_due_handling.
+            default_currency, past_due_handling, skip_mapped_records.
 
         - name: plan_code_mapping_file
           kind: string
@@ -155,20 +158,6 @@ plugins:
           description: >
             Path to SQLite database file for storing source_id to stripe_id mappings.
             This enables idempotent re-runs and customer-subscription linking.
-
-        - name: skip_existence_check
-          kind: boolean
-          label: Skip Existence Check
-          value: false
-          description: >
-            If true, skip Stripe customer search by email when no local mapping exists.
-
-        - name: skip_already_migrated
-          kind: boolean
-          label: Skip Already Migrated
-          value: false
-          description: >
-            If true, skip records that already have a row in the mapping database.
 
 # Example environment configuration:
 #

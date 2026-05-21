@@ -50,7 +50,12 @@ class StripeBaseSink(BatchSink):
         self._stripe_client: StripeClientWrapper = target._stripe_client  # type: ignore
         self._hard_fail = target._parsed_config.hard_fail  # type: ignore
         self._dry_run = target._parsed_config.dry_run  # type: ignore
-        self._skip_already_migrated = target._parsed_config.skip_already_migrated  # type: ignore
+        self._skip_mapped_records_customers = (  # type: ignore[attr-defined]
+            target._parsed_config.customers.skip_mapped_records
+        )
+        self._skip_mapped_records_subscriptions = (  # type: ignore[attr-defined]
+            target._parsed_config.subscriptions.skip_mapped_records
+        )
 
     @property
     def stripe_client(self) -> StripeClientWrapper:
@@ -67,10 +72,11 @@ class StripeBaseSink(BatchSink):
         """Get cached dry_run setting."""
         return self._dry_run  # type: ignore[no-any-return]
 
-    @property
-    def skip_already_migrated(self) -> bool:
-        """Get cached skip_already_migrated setting."""
-        return self._skip_already_migrated  # type: ignore[no-any-return]
+    def _skip_mapped_records_enabled(self, entity_type: EntityType) -> bool:
+        """Return whether to skip records already present in the mapping DB."""
+        if entity_type == EntityType.CUSTOMER:
+            return self._skip_mapped_records_customers  # type: ignore[no-any-return]
+        return self._skip_mapped_records_subscriptions  # type: ignore[no-any-return]
 
     def _should_skip_migrated(
         self,
@@ -88,7 +94,7 @@ class StripeBaseSink(BatchSink):
         Returns:
             True if record should be skipped, False otherwise.
         """
-        if not self.skip_already_migrated:
+        if not self._skip_mapped_records_enabled(entity_type):
             return False
 
         # Check if already in local DB

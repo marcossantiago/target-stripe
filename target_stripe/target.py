@@ -97,6 +97,20 @@ class TargetStripe(Target):
                     default=False,
                     description="Attach test payment methods in test mode",
                 ),
+                th.Property(
+                    "check_existing",
+                    th.BooleanType,
+                    default=True,
+                    description=(
+                        "Search Stripe for existing customer by email when no local mapping"
+                    ),
+                ),
+                th.Property(
+                    "skip_mapped_records",
+                    th.BooleanType,
+                    default=False,
+                    description="Skip customer records already in the local mapping database",
+                ),
             ),
             description="Customer stream configuration",
         ),
@@ -169,6 +183,14 @@ class TargetStripe(Target):
                     allowed_values=["skip", "create_fresh"],
                     description="When billing anchor is in the past",
                 ),
+                th.Property(
+                    "skip_mapped_records",
+                    th.BooleanType,
+                    default=False,
+                    description=(
+                        "Skip subscription records already in the local mapping database"
+                    ),
+                ),
             ),
             description="Subscription stream configuration",
         ),
@@ -207,18 +229,6 @@ class TargetStripe(Target):
             th.NumberType,
             default=2.0,
             description="Base for exponential backoff (seconds)",
-        ),
-        th.Property(
-            "skip_existence_check",
-            th.BooleanType,
-            default=False,
-            description="Skip Stripe email search when resolving existing customers",
-        ),
-        th.Property(
-            "skip_already_migrated",
-            th.BooleanType,
-            default=False,
-            description="Skip records already present in the local mapping database",
         ),
     ).to_dict()
 

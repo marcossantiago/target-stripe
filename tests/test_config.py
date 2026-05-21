@@ -261,6 +261,23 @@ class TestTestPaymentMethods:
         config = parse_config(base_config)
         assert config.customers.add_test_payment_methods is False
 
+    def test_check_existing_defaults_to_true(self, base_config: dict) -> None:
+        """Test that customers.check_existing defaults to True."""
+        config = parse_config(base_config)
+        assert config.customers.check_existing is True
+
+    def test_check_existing_can_be_disabled(self, base_config: dict) -> None:
+        """Test that customers.check_existing can be set to False."""
+        base_config["customers"] = {"check_existing": False}
+        config = parse_config(base_config)
+        assert config.customers.check_existing is False
+
+    def test_skip_mapped_records_defaults_to_false(self, base_config: dict) -> None:
+        """Test that skip_mapped_records defaults to False on both streams."""
+        config = parse_config(base_config)
+        assert config.customers.skip_mapped_records is False
+        assert config.subscriptions.skip_mapped_records is False
+
 
 class TestParseConfig:
     """Tests for parse_config function."""
