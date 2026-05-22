@@ -47,14 +47,13 @@ class StripeBaseSink(BatchSink):
         self._records_processed = 0
         self._errors: list[dict[str, Any]] = []
         # Cache config values during init (needed for joblib serialization)
-        self._stripe_client: StripeClientWrapper = target._stripe_client  # type: ignore
-        self._hard_fail = target._parsed_config.hard_fail  # type: ignore
-        self._dry_run = target._parsed_config.dry_run  # type: ignore
-        self._skip_mapped_records_customers = (  # type: ignore[attr-defined]
-            target._parsed_config.customers.skip_mapped_records
-        )
-        self._skip_mapped_records_subscriptions = (  # type: ignore[attr-defined]
-            target._parsed_config.subscriptions.skip_mapped_records
+        self._stripe_client: StripeClientWrapper = target._stripe_client  # type: ignore[attr-defined]
+        parsed_config = target._parsed_config  # type: ignore[attr-defined]
+        self._hard_fail = parsed_config.hard_fail
+        self._dry_run = parsed_config.dry_run
+        self._skip_mapped_records_customers = parsed_config.customers.skip_mapped_records
+        self._skip_mapped_records_subscriptions = (
+            parsed_config.subscriptions.skip_mapped_records
         )
 
     @property
@@ -367,7 +366,7 @@ class CustomerSink(StripeBaseSink):
                     address[tgt] = str(ba[src])
             return address if address else None
 
-        address: dict[str, str] = {}
+        address = {}
         address_mapping = {
             "address_line1": "line1",
             "address_line_1": "line1",
