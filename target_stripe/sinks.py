@@ -52,9 +52,7 @@ class StripeBaseSink(BatchSink):
         self._hard_fail = parsed_config.hard_fail
         self._dry_run = parsed_config.dry_run
         self._skip_mapped_records_customers = parsed_config.customers.skip_mapped_records
-        self._skip_mapped_records_subscriptions = (
-            parsed_config.subscriptions.skip_mapped_records
-        )
+        self._skip_mapped_records_subscriptions = parsed_config.subscriptions.skip_mapped_records
 
     @property
     def stripe_client(self) -> StripeClientWrapper:
