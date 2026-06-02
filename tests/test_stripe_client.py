@@ -611,3 +611,87 @@ class TestPaymentMethods:
         call_kwargs = mock_stripe.Subscription.create.call_args[1]
         assert call_kwargs.get("collection_method") == "send_invoice"
         assert call_kwargs.get("days_until_due") == 30
+
+    def test_subscription_with_explicit_payment_method_id(
+        self,
+        parsed_config: TargetStripeConfig,
+        mapping_store: MappingStore,
+        mock_stripe: MagicMock,
+    ) -> None:
+        """Test that a per-subscription payment_method_id sets default_payment_method."""
+        client = StripeClientWrapper(parsed_config, mapping_store)
+        mapping_store.set_mapping(EntityType.CUSTOMER, "cust_123", "cus_stripe_123")
+
+        mock_subscription = MagicMock()
+        mock_subscription.id = "sub_pm_test"
+        mock_stripe.Subscription.create.return_value = mock_subscription
+
+        stripe_id, was_created = client.upsert_subscription(
+            source_id="sub_123",
+            data={
+                "customer_id": "cust_123",
+                "price_id": "price_test123",
+                "payment_method_id": "pm_test_visa",
+            },
+        )
+
+        assert stripe_id == "sub_pm_test"
+        assert was_created is True
+        call_kwargs = mock_stripe.Subscription.create.call_args[1]
+        assert call_kwargs.get("default_payment_method") == "pm_test_visa"
+        assert call_kwargs.get("collection_method") == "charge_automatically"
+        assert "days_until_due" not in call_kwargs
+
+    def test_subscription_payment_method_id_priority_over_test_flag(
+        self,
+        test_config: TargetStripeConfig,
+        mapping_store: MappingStore,
+        mock_stripe: MagicMock,
+    ) -> None:
+        """payment_method_id in data takes priority: sets default_payment_method explicitly."""
+        client = StripeClientWrapper(test_config, mapping_store)
+        mapping_store.set_mapping(EntityType.CUSTOMER, "cust_123", "cus_stripe_123")
+
+        mock_subscription = MagicMock()
+        mock_subscription.id = "sub_pm_priority"
+        mock_stripe.Subscription.create.return_value = mock_subscription
+
+        stripe_id, _ = client.upsert_subscription(
+            source_id="sub_123",
+            data={
+                "customer_id": "cust_123",
+                "price_id": "price_test123",
+                "payment_method_id": "pm_specific_card",
+            },
+        )
+
+        call_kwargs = mock_stripe.Subscription.create.call_args[1]
+        assert call_kwargs.get("default_payment_method") == "pm_specific_card"
+        assert call_kwargs.get("collection_method") == "charge_automatically"
+
+    def test_subscription_direct_stripe_customer_id_with_payment_method(
+        self,
+        parsed_config: TargetStripeConfig,
+        mapping_store: MappingStore,
+        mock_stripe: MagicMock,
+    ) -> None:
+        """Stripe customer ID (cus_) passed directly works with per-sub payment method."""
+        client = StripeClientWrapper(parsed_config, mapping_store)
+
+        mock_subscription = MagicMock()
+        mock_subscription.id = "sub_direct_cus"
+        mock_stripe.Subscription.create.return_value = mock_subscription
+
+        stripe_id, was_created = client.upsert_subscription(
+            source_id="sub_456",
+            data={
+                "customer_id": "cus_direct_stripe_id",
+                "price_id": "price_test123",
+                "payment_method_id": "pm_mastercard_test",
+            },
+        )
+
+        assert stripe_id == "sub_direct_cus"
+        call_kwargs = mock_stripe.Subscription.create.call_args[1]
+        assert call_kwargs.get("customer") == "cus_direct_stripe_id"
+        assert call_kwargs.get("default_payment_method") == "pm_mastercard_test"

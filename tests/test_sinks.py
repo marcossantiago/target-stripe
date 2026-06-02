@@ -438,3 +438,116 @@ class TestSubscriptionSinkTransform:
         result = subscription_sink_instance._transform_record(record)
         assert result["metadata"]["source"] == "migration"
         assert result["metadata"]["batch"] == "2024-01"
+
+    def test_transform_record_plan_code_field_configured(self) -> None:
+        """Test that a configured plan_code_field overrides generic fallback names."""
+
+        class MockSink(SubscriptionSink):
+            def __init__(self) -> None:
+                self._subscription_sf = SubscriptionSourceFieldsConfig(
+                    subscription_id="source_subscription_id",
+                    metadata=[("source_subscription_id", "source_subscription_id")],
+                    plan_code_field="source_product_handle",
+                )
+
+        sink = MockSink()
+        record = {
+            "source_subscription_id": "sub_99",
+            "customer_id": "cust_1",
+            "source_product_handle": "basic_monthly",
+            "product_handle": "should-not-be-used",
+        }
+        result = sink._transform_record(record)
+        assert result["plan_code"] == "basic_monthly"
+
+    def test_transform_record_plan_code_field_priority_over_fallbacks(self) -> None:
+        """Configured plan_code_field wins even when generic field is also present."""
+
+        class MockSink(SubscriptionSink):
+            def __init__(self) -> None:
+                self._subscription_sf = SubscriptionSourceFieldsConfig(
+                    subscription_id="source_subscription_id",
+                    metadata=[("source_subscription_id", "source_subscription_id")],
+                    plan_code_field="custom_handle",
+                )
+
+        sink = MockSink()
+        record = {
+            "source_subscription_id": "sub_1",
+            "customer_id": "cust_1",
+            "custom_handle": "my-plan",
+            "plan_code": "fallback-plan",
+            "price_id": "price_should_not_win",
+        }
+        result = sink._transform_record(record)
+        assert result["plan_code"] == "my-plan"
+        assert "price_id" not in result
+
+    def test_transform_record_plan_code_field_not_set_falls_back(
+        self,
+        subscription_sink_instance: SubscriptionSink,
+    ) -> None:
+        """When plan_code_field is None, generic fallbacks still work."""
+        record = {
+            "source_subscription_id": "sub_1",
+            "customer_id": "cust_1",
+            "product_handle": "enterprise",
+        }
+        result = subscription_sink_instance._transform_record(record)
+        assert result["plan_code"] == "enterprise"
+
+    def test_transform_record_payment_method_id_configured(self) -> None:
+        """Test that a configured payment_method_id field is extracted."""
+
+        class MockSink(SubscriptionSink):
+            def __init__(self) -> None:
+                self._subscription_sf = SubscriptionSourceFieldsConfig(
+                    subscription_id="source_subscription_id",
+                    metadata=[("source_subscription_id", "source_subscription_id")],
+                    payment_method_id="payment_method_ref",
+                )
+
+        sink = MockSink()
+        record = {
+            "source_subscription_id": "sub_99",
+            "customer_id": "cust_1",
+            "price_id": "price_123",
+            "payment_method_ref": "pm_test123",
+        }
+        result = sink._transform_record(record)
+        assert result["payment_method_id"] == "pm_test123"
+
+    def test_transform_record_payment_method_id_absent(
+        self,
+        subscription_sink_instance: SubscriptionSink,
+    ) -> None:
+        """When payment_method_id field is not configured, it is not extracted."""
+        record = {
+            "source_subscription_id": "sub_1",
+            "customer_id": "cust_1",
+            "price_id": "price_123",
+            "stripe_payment_method_id": "pm_some_pm",
+        }
+        result = subscription_sink_instance._transform_record(record)
+        assert "payment_method_id" not in result
+
+    def test_transform_record_payment_method_id_empty_skipped(self) -> None:
+        """Empty/null payment_method_id field is not extracted."""
+
+        class MockSink(SubscriptionSink):
+            def __init__(self) -> None:
+                self._subscription_sf = SubscriptionSourceFieldsConfig(
+                    subscription_id="source_subscription_id",
+                    metadata=[("source_subscription_id", "source_subscription_id")],
+                    payment_method_id="stripe_payment_method_id",
+                )
+
+        sink = MockSink()
+        record = {
+            "source_subscription_id": "sub_1",
+            "customer_id": "cust_1",
+            "price_id": "price_123",
+            "stripe_payment_method_id": None,
+        }
+        result = sink._transform_record(record)
+        assert "payment_method_id" not in result

@@ -238,6 +238,52 @@ class TestSubscriptionSourceFieldsConfig:
         assert config.subscription_id == "source_subscription_id"
         assert config.stripe_metadata_key_for_source_id() == "source_subscription_id"
 
+    def test_payment_method_id_defaults_to_none(self) -> None:
+        config = SubscriptionSourceFieldsConfig()
+        assert config.payment_method_id is None
+
+    def test_payment_method_id_can_be_set(self) -> None:
+        config = SubscriptionSourceFieldsConfig(
+            subscription_id="source_subscription_id",
+            metadata=[("source_subscription_id", "source_subscription_id")],
+            payment_method_id="stripe_payment_method_id",
+        )
+        assert config.payment_method_id == "stripe_payment_method_id"
+
+    def test_plan_code_field_defaults_to_none(self) -> None:
+        config = SubscriptionSourceFieldsConfig()
+        assert config.plan_code_field is None
+
+    def test_plan_code_field_can_be_set(self) -> None:
+        config = SubscriptionSourceFieldsConfig(
+            subscription_id="source_subscription_id",
+            metadata=[("source_subscription_id", "source_subscription_id")],
+            plan_code_field="source_product_handle",
+        )
+        assert config.plan_code_field == "source_product_handle"
+
+    def test_all_new_fields_in_full_config(self, base_config: dict) -> None:
+        """Test that payment_method_id and plan_code_field are accepted in full config."""
+        base_config["subscriptions"] = {
+            "source_fields": {
+                "subscription_id": "ext_sub_id",
+                "subscription_customer_id": "customer_ref",
+                "payment_method_id": "payment_method_ref",
+                "plan_code_field": "source_product_handle",
+                "cancel_at_period_end": "cancel_at_end",
+                "billing_cycle_anchor": "period_ends_at",
+                "backdate_start": "period_started_at",
+                "metadata": [
+                    ["ext_sub_id", "ext_sub_id"],
+                ],
+            },
+            "plan_code_to_price_id": {"basic": "price_123"},
+            "past_due_handling": "create_fresh",
+        }
+        config = parse_config(base_config)
+        assert config.subscriptions.source_fields.payment_method_id == "payment_method_ref"
+        assert config.subscriptions.source_fields.plan_code_field == "source_product_handle"
+
 
 class TestTestPaymentMethods:
     """Tests for test payment methods configuration."""

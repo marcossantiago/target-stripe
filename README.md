@@ -55,6 +55,8 @@ pip install -e .
 | `customers.update_existing` | boolean | `false` | Update Stripe when customer found; if false, link only (counts as `skipped`) |
 | `subscriptions.source_fields.subscription_id` | string | `source_subscription_id` | Column for subscription source ID |
 | `subscriptions.source_fields.subscription_customer_id` | string | `null` | Column linking subscription row to customer |
+| `subscriptions.source_fields.payment_method_id` | string | `null` | Column containing a Stripe payment method ID to set as `default_payment_method` per subscription |
+| `subscriptions.source_fields.plan_code_field` | string | `null` | Column for the plan code / product handle (falls back to `plan_code`, `plan_id`, `product_handle`, `price_id`) |
 | `subscriptions.source_fields.cancel_at_period_end` | string | `cancel_at_period_end` | Column for cancel-at-period-end flag |
 | `subscriptions.source_fields.billing_cycle_anchor` | string | `null` | Column for renewal / anchor date |
 | `subscriptions.source_fields.backdate_start` | string | `null` | Column for period start / backdate |
@@ -265,6 +267,58 @@ When testing your integration with Stripe, you can automatically attach test pay
 
 **Example configuration file:** See `config.test-payment-methods.json` for a complete example.
 
+### Per-Subscription Payment Methods
+
+When migrating from a system where a single customer has multiple payment methods and different subscriptions use different cards, you can specify the payment method per subscription record.
+
+**Configure the field name:**
+```json
+{
+  "subscriptions": {
+    "source_fields": {
+      "subscription_id": "source_subscription_id",
+      "subscription_customer_id": "customer_ref",
+      "payment_method_id": "payment_method_ref",
+      "metadata": [
+        ["source_subscription_id", "source_subscription_id"]
+      ]
+    }
+  }
+}
+```
+
+**Your Singer records should then include the field:**
+```json
+{
+  "source_subscription_id": "sub_123",
+  "customer_ref": "cus_abc123",
+  "payment_method_ref": "pm_abc456",
+  "product_handle": "basic_monthly"
+}
+```
+
+**Behavior:**
+- When `payment_method_id` resolves to a non-empty value, the subscription is created with `default_payment_method` set to that value and `collection_method: "charge_automatically"`
+- This takes priority over the `add_test_payment_methods` flag
+- When the field is absent or empty, the existing fallback logic applies (`charge_automatically` if test PMs are enabled, otherwise `send_invoice`)
+- The payment method must already be attached to the customer before the subscription is created
+
+### Configuring the Plan Code Field
+
+By default the target looks for the plan code in fields named `price_id`, `plan_code`, `plan_id`, or `product_handle`. If your source data uses a different column name you can configure it directly:
+
+```json
+{
+  "subscriptions": {
+    "source_fields": {
+      "plan_code_field": "source_product_handle"
+    }
+  }
+}
+```
+
+When `plan_code_field` is set it takes priority over all generic fallback names.
+
 ## Supported Streams
 
 ### customers
@@ -309,13 +363,14 @@ Creates or updates Stripe Subscriptions.
 | `id` | string | Yes* | Alternative source ID field |
 | `customer_id` | string | Yes | Customer reference (source or Stripe ID; configurable via `subscriptions.source_fields.subscription_customer_id`) |
 | `price_id` | string | Yes** | Stripe price ID |
-| `plan_code` | string | Yes** | Plan code (mapped to price_id) |
+| `plan_code` | string | Yes** | Plan code (mapped to price_id via `plan_code_to_price_id`; also `plan_id`, `product_handle`) |
 | `quantity` | integer | No | Subscription quantity |
 | `trial_end` | string/int | No | Trial end timestamp or "now" |
 | `coupon` | string | No | Coupon code to apply |
 | `cancel_at_period_end` | boolean | No | Cancel at period end flag (column name from `subscriptions.source_fields.cancel_at_period_end`) |
 | `current_period_ends_at` | string/int | No | Renewal date for billing cycle preservation (`subscriptions.source_fields.billing_cycle_anchor`) |
 | `current_period_started_at` | string/int | No | Period start (`subscriptions.source_fields.backdate_start`) |
+| *(configured)* | string | No | Stripe payment method ID to assign as `default_payment_method` (column name from `subscriptions.source_fields.payment_method_id`) |
 | `metadata` | object | No | Additional metadata |
 
 *One of the source ID fields is required. The configured `subscriptions.source_fields.subscription_id` takes priority.

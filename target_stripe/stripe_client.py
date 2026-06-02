@@ -692,15 +692,15 @@ class StripeClientWrapper:
 
         subscription_data["customer"] = stripe_customer_id
 
-        # Use send_invoice collection to avoid requiring payment methods
-        # This creates active subscriptions that will be invoiced
-        # However, if test payment methods are enabled, use charge_automatically
-        if self.config.customers.add_test_payment_methods:
-            # In test mode with payment methods, use charge_automatically
+        # Set default_payment_method when a specific PM is provided per subscription
+        if data.get("payment_method_id"):
+            subscription_data["default_payment_method"] = data["payment_method_id"]
+            subscription_data["collection_method"] = "charge_automatically"
+        elif self.config.customers.add_test_payment_methods:
             subscription_data["collection_method"] = "charge_automatically"
         elif "default_payment_method" not in subscription_data:
             subscription_data["collection_method"] = "send_invoice"
-            subscription_data["days_until_due"] = 30  # Invoice due in 30 days
+            subscription_data["days_until_due"] = 30
 
         try:
             subscription = self._execute_with_retry(

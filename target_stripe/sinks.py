@@ -532,7 +532,10 @@ class SubscriptionSink(StripeBaseSink):
                 record,
             )
 
-        if "price_id" in record and record["price_id"]:
+        plan_field = self._subscription_sf.plan_code_field
+        if plan_field and plan_field in record and record[plan_field]:
+            subscription_data["plan_code"] = record[plan_field]
+        elif "price_id" in record and record["price_id"]:
             subscription_data["price_id"] = record["price_id"]
         elif "plan_code" in record and record["plan_code"]:
             subscription_data["plan_code"] = record["plan_code"]
@@ -553,6 +556,10 @@ class SubscriptionSink(StripeBaseSink):
             subscription_data["coupon"] = record["coupon"]
         elif "coupon_code" in record and record["coupon_code"]:
             subscription_data["coupon"] = record["coupon_code"]
+
+        pm_field = self._subscription_sf.payment_method_id
+        if pm_field and pm_field in record and record[pm_field]:
+            subscription_data["payment_method_id"] = str(record[pm_field])
 
         # Use configured field name for cancel_at_period_end
         cancel_field = self._subscription_sf.cancel_at_period_end

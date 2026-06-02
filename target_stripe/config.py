@@ -111,9 +111,23 @@ class SubscriptionSourceFieldsConfig(BaseModel):
             "If unset, common fallbacks are used."
         ),
     )
+    plan_code_field: Optional[str] = Field(
+        default=None,
+        description=(
+            "Record field containing the plan code / product handle. "
+            "If unset, common fallbacks (plan_code, plan_id, product_handle, price_id) are used."
+        ),
+    )
     cancel_at_period_end: str = Field(
         default="cancel_at_period_end",
         description="Record field for cancel-at-period-end flag",
+    )
+    payment_method_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Record field containing the Stripe payment method ID to set as "
+            "default_payment_method for the subscription."
+        ),
     )
     billing_cycle_anchor: Optional[str] = Field(
         default=None,
