@@ -97,13 +97,18 @@ plugins:
                 - [source_subscription_id, source_subscription_id]
               cancel_at_period_end: cancel_at_period_end
               proration_behavior: none
+              payment_method_id: null
+              plan_code_field: null
             plan_code_to_price_id: {}
             default_currency: usd
             past_due_handling: skip
             skip_mapped_records: false
           description: >
-            Subscription loader settings, plan_code_to_price_id mapping,
-            default_currency, past_due_handling, skip_mapped_records.
+            Subscription loader settings, source_fields (subscription_id,
+            payment_method_id, plan_code_field, cancel_at_period_end,
+            billing_cycle_anchor, backdate_start, proration_behavior, metadata),
+            plan_code_to_price_id mapping, default_currency, past_due_handling,
+            skip_mapped_records.
 
         - name: plan_code_mapping_file
           kind: string
